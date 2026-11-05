@@ -1,0 +1,11 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.env
+*.db
+backend/data/
+backend/wheels/*.whl
+.venv/
+import_reports/
+pms_bundle*.json*

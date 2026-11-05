@@ -1,0 +1,2 @@
+# Only the extractor needs this (pure Python, no compiler). The loader runs inside the ELM backend.
+PyMySQL>=1.0.3,<2

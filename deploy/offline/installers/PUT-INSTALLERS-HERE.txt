@@ -1,0 +1,4 @@
+Place here (downloaded on the connected machine) before running prepare-offline-bundle.ps1:
+  1. Docker Desktop Installer.exe   - same version as on the build PC (docker version)
+  2. wsl.<version>.x64.msi          - from https://github.com/microsoft/WSL/releases
+They will be copied into the offline package automatically.

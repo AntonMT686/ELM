@@ -1,0 +1,96 @@
+# ADA-ELM - OFFLINE / AIR-GAPPED runtime. Uses only pre-loaded images (no build, no pull).
+# Started by START-ADA-ELM.bat (which creates .env on first run).
+# OnlyOffice: either the bundled one (COMPOSE_PROFILES=bundled-onlyoffice) or an OnlyOffice already running on the server.
+name: ada-elm
+
+x-elm-env: &elm-env
+  ELM_ENVIRONMENT: ${ELM_ENVIRONMENT:-uat}
+  ELM_SEED_DEMO_DATA: ${ELM_SEED_DEMO_DATA:-false}
+  ELM_ADMIN_PASSWORD: ${ELM_ADMIN_PASSWORD}
+  ELM_SECRET_KEY: ${ELM_SECRET_KEY}
+  ELM_COOKIE_SECURE: ${ELM_COOKIE_SECURE:-false}
+  ELM_DATABASE_URL: postgresql+psycopg://elm:${ELM_DB_PASSWORD}@db:5432/elm
+  ELM_ONLYOFFICE_ENABLED: "true"
+  ELM_ONLYOFFICE_PUBLIC_URL: ${ELM_ONLYOFFICE_PUBLIC_URL}
+  ELM_ONLYOFFICE_INTERNAL_URL: ${ELM_ONLYOFFICE_INTERNAL_URL}
+  ELM_ONLYOFFICE_JWT_SECRET: ${ELM_ONLYOFFICE_JWT_SECRET}
+  ELM_BACKEND_INTERNAL_URL: ${ELM_BACKEND_INTERNAL_URL}
+  ELM_SIGNATURE_PROVIDER: dev_local_ca
+  ELM_MAX_UPLOAD_MB: ${ELM_MAX_UPLOAD_MB:-200}
+  ELM_WORKER_INTERVAL_SECONDS: "900"
+  TZ: Asia/Kolkata
+
+services:
+  db:
+    image: postgres:16.6-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: elm
+      POSTGRES_USER: elm
+      POSTGRES_PASSWORD: ${ELM_DB_PASSWORD}
+      TZ: Asia/Kolkata
+    volumes: [elm-db:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U elm -d elm"], interval: 10s, timeout: 5s, retries: 30 }
+    networks: [data]
+
+  backend:
+    image: ada-elm/backend:0.1.0
+    pull_policy: never
+    restart: unless-stopped
+    environment: *elm-env
+    volumes: [elm-files:/data]
+    depends_on: { db: { condition: service_healthy } }
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    networks: [app, data]
+
+  worker:
+    image: ada-elm/backend:0.1.0
+    pull_policy: never
+    restart: unless-stopped
+    environment: *elm-env
+    command: ["python", "-m", "app.worker"]
+    volumes: [elm-files:/data]
+    depends_on: { backend: { condition: service_healthy } }
+    networks: [data]
+
+  web:
+    image: ada-elm/web:0.1.0
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      ONLYOFFICE_ORIGIN: ${ELM_ONLYOFFICE_PUBLIC_URL}
+    ports: ["${ELM_HTTP_PORT:-8088}:80"]
+    depends_on: [backend]
+    networks: [app]
+
+  onlyoffice:
+    profiles: [bundled-onlyoffice]
+    image: onlyoffice/documentserver:8.2.2
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ELM_ONLYOFFICE_JWT_SECRET}
+      JWT_HEADER: Authorization
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      ALLOW_META_IP_ADDRESS: "true"
+    ports: ["${ELM_ONLYOFFICE_PORT:-8080}:80"]
+    volumes:
+      - oo-data:/var/www/onlyoffice/Data
+      - oo-logs:/var/log/onlyoffice
+      - oo-lib:/var/lib/onlyoffice
+      - oo-db:/var/lib/postgresql
+    networks: [app]
+
+volumes:
+  elm-db:
+  elm-files:
+  oo-data:
+  oo-logs:
+  oo-lib:
+  oo-db:
+
+networks:
+  app:
+  data:
+    internal: true
