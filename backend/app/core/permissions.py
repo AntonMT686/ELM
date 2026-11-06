@@ -13,13 +13,27 @@ PERMISSIONS: dict[str, str] = {
     # engineering structure / projects
     "project.view": "View projects",
     "project.manage": "Create/update projects and hierarchy levels",
-    "item.manage": "Create/update engineering items (System/LRU...)",
+    "item.manage": "Create/update engineering items (System/Unit...)",
     # requirements
     "req.edit": "Create, edit and link requirements, and submit them for review",
     "req.baseline": "Baseline approved requirements and manage requirement sources",
     # planning and work items
     "plan.manage": "Create and change plans, milestones, work packages, activities and baselines",
     "task.manage": "Create and assign tasks",
+    # design and engineering artefacts (architecture §11)
+    "design.edit": "Create design records, save diagrams and versions, link them and submit them for review",
+    "design.baseline": "Baseline approved design records",
+    # testing, verification and defects (architecture §13)
+    "test.edit": "Write test cases and plans, create runs and record test results and evidence",
+    "test.approve": "Activate approved test plans, make test cases obsolete and close test runs",
+    "defect.manage": "Triage, assign, reject, defer and close defects",
+    # software deployment (architecture §14)
+    "deploy.configure": "Configure deployment environments, their gates and execution adapters",
+    "deploy.request": "Request deployments of a version to an environment",
+    "deploy.approve": "Approve deployment requests and environment configurations",
+    "deploy.execute": "Execute, retry, cancel and roll back approved deployments and record their results",
+    # source control (GitLab)
+    "scm.manage": "Register GitLab repositories for a project and change their settings",
     # workflow configuration
     "workflow.configure": "Design, validate and publish workflows",
     # administration

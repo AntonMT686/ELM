@@ -1,0 +1,30 @@
+# OnlyOffice Document Server — the ONLY ADA-ELM component that runs in Docker.
+# The backend, worker, frontend and MySQL run as normal processes on the host.
+#
+# Skip this file if OnlyOffice is already running on the server: just put its URL and JWT secret in .env.
+# Otherwise, from the repository folder:
+#     docker compose --env-file .env -f deploy/onlyoffice/docker-compose.yml up -d
+# Offline: load the image first with  docker load -i offline\images\onlyoffice-documentserver-8.2.2.tar
+name: ada-elm-onlyoffice
+
+services:
+  onlyoffice:
+    image: onlyoffice/documentserver:8.2.2
+    pull_policy: missing
+    restart: unless-stopped
+    environment:
+      JWT_ENABLED: "true"
+      JWT_SECRET: ${ELM_ONLYOFFICE_JWT_SECRET:?set ELM_ONLYOFFICE_JWT_SECRET in .env}
+      # The ELM backend runs on the host (a private address), so OnlyOffice must be allowed to call it.
+      ALLOW_PRIVATE_IP_ADDRESS: "true"
+      TZ: Asia/Kolkata
+    ports: ["8080:80"]
+    # Lets the container reach the backend on the host as host.docker.internal (Linux Docker; Docker Desktop has it built in).
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    volumes:
+      - oo-data:/var/www/onlyoffice/Data
+      - oo-logs:/var/log/onlyoffice
+
+volumes:
+  oo-data:
+  oo-logs:

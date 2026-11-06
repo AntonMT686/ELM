@@ -9,9 +9,10 @@ import { api } from '../api/client'
 import { useAction, useMe, useOrgUnits, useUsers } from '../api/hooks'
 import { UserSelect } from '../pages/InboxPage'
 import { StatusTag, UserAvatar, When } from './common'
+import ScmPanel from './ScmPanel'
 
 export const PRIORITY_COLOR: Record<string, string> = { LOW: 'gray', MEDIUM: 'blue', HIGH: 'orange', CRITICAL: 'red' }
-export const KIND_LABEL: Record<string, string> = { TASK: 'Task', ACTION: 'Action item', MILESTONE: 'Milestone', CHANGE_REQUEST: 'Change request', ISSUE: 'Issue' }
+export const KIND_LABEL: Record<string, string> = { TASK: 'Task', ACTION: 'Action item', MILESTONE: 'Milestone', CHANGE_REQUEST: 'Change request', ISSUE: 'Issue', DEVELOPMENT: 'Development' }
 const DEP_LABEL: Record<string, string> = { FS: 'Finish → Start', SS: 'Start → Start', FF: 'Finish → Finish', SF: 'Start → Finish' }
 
 const iso = (d: Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null)
@@ -106,13 +107,14 @@ function Existing({ id, onClose, invalidate }: { id: string; onClose: () => void
         <Progress value={t.progress} size="sm" color={t.progress >= 100 ? 'teal' : 'blue'} />
       </div>
       <Transitions task={t} keys={refreshKeys} />
-      <Tabs defaultValue="details" keepMounted={false}>
+      <Tabs defaultValue={t.kind === 'DEVELOPMENT' ? 'code' : 'details'} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="details">Details</Tabs.Tab>
           <Tabs.Tab value="checklist">Checklist ({t.checklist.length})</Tabs.Tab>
           <Tabs.Tab value="links">Dependencies ({t.predecessors.length + t.successors.length})</Tabs.Tab>
           <Tabs.Tab value="deliverables">Deliverables ({t.deliverables.length})</Tabs.Tab>
           <Tabs.Tab value="people">People</Tabs.Tab>
+          {t.project && <Tabs.Tab value="code">Code</Tabs.Tab>}
           <Tabs.Tab value="activity">Activity ({t.comments.length})</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="details" pt="md"><Details task={t} keys={refreshKeys} onClose={onClose} /></Tabs.Panel>
@@ -120,6 +122,7 @@ function Existing({ id, onClose, invalidate }: { id: string; onClose: () => void
         <Tabs.Panel value="links" pt="md"><Dependencies task={t} keys={refreshKeys} /></Tabs.Panel>
         <Tabs.Panel value="deliverables" pt="md"><Deliverables task={t} keys={refreshKeys} /></Tabs.Panel>
         <Tabs.Panel value="people" pt="md"><People task={t} keys={refreshKeys} /></Tabs.Panel>
+        {t.project && <Tabs.Panel value="code" pt="md"><ScmPanel task={t} keys={refreshKeys} /></Tabs.Panel>}
         <Tabs.Panel value="activity" pt="md"><Activity task={t} keys={refreshKeys} /></Tabs.Panel>
       </Tabs>
     </Stack>

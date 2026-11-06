@@ -207,7 +207,7 @@ def list_milestones(pid: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
 
 def _milestone_gate(ctx: Ctx, m: Milestone) -> None:
     """A milestone is not achieved while tasks tied to it are open (architecture §9.4 and §17.2)."""
-    states = lc.state_map(lc.get_lifecycle(ctx.db, m.project_id))
+    states = lc.merged_state_map(ctx.db, m.project_id)
     blockers = [f"Task {t.key} is {states.get(t.status, {}).get('label', t.status)}." for t in ctx.db.execute(select(WorkItem).where(WorkItem.milestone_id == m.id)).scalars() if states.get(t.status, {}).get("category") not in ("DONE", "CANCELLED")]
     if blockers:
         raise AppError("This milestone cannot be marked achieved yet.", code="GATE_BLOCKED", details={"errors": blockers})
@@ -386,7 +386,7 @@ def update_activity(aid: uuid.UUID, body: ActivityIn, version: int | None = None
     _check_version(version, a, "activity")
     _validate_activity(ctx, plan, body)
     if body.status == "COMPLETED" and a.status != "COMPLETED":
-        states = lc.state_map(lc.get_lifecycle(ctx.db, plan.project_id))
+        states = lc.merged_state_map(ctx.db, plan.project_id)
         blockers = [f"Task {t.key} is {states.get(t.status, {}).get('label', t.status)}." for t in ctx.db.execute(select(WorkItem).where(WorkItem.activity_id == a.id)).scalars() if states.get(t.status, {}).get("category") not in ("DONE", "CANCELLED")]
         if blockers:
             raise AppError("This activity cannot be completed yet.", code="GATE_BLOCKED", details={"errors": blockers})
@@ -508,7 +508,6 @@ def import_plan_csv(plan_id: uuid.UUID, file: UploadFile = File(...), dry_run: b
     d = svc.PlanData(ctx.db, plan)
     acts = {a.title.lower(): a for a in d.activities}
     wps = {w.code.lower(): w for w in d.packages}
-    life = lc.get_lifecycle(ctx.db, plan.project_id)
     rows, problems = [], []
     for n, rec in enumerate(reader, 2):
         rec = {(k or "").strip(): (v or "").strip() for k, v in rec.items() if isinstance(v, str)}
@@ -555,7 +554,7 @@ def import_plan_csv(plan_id: uuid.UUID, file: UploadFile = File(...), dry_run: b
         return {"dry_run": True, "would_create": len(rows) if not problems else 0, "valid_rows": len(rows), "errors": problems, "committed": False}
     for r in rows:
         key = f"{d.project.code}-{next_seq(ctx.db, 'wi:' + d.project.code)}"
-        w = WorkItem(key=key, title=r["title"], kind=r["kind"], priority=r["priority"], status=lc.initial_state(life), project_id=plan.project_id, plan_id=plan.id, activity_id=r["activity"].id if r["activity"] else None,
+        w = WorkItem(key=key, title=r["title"], kind=r["kind"], priority=r["priority"], status=lc.initial_state(lc.get_lifecycle(ctx.db, plan.project_id, r["kind"])), project_id=plan.project_id, plan_id=plan.id, activity_id=r["activity"].id if r["activity"] else None,
                      work_package_id=r["wp"].id if r["wp"] else None, assignee_id=r["assignee"].id if r["assignee"] else None, reporter_id=ctx.user.id, start_date=r["start"], due_date=r["due"], estimated_hours=r["hours"])
         ctx.db.add(w)
         ctx.db.flush()

@@ -51,7 +51,7 @@ function TypeDrawer({ t, onClose }: { t: any | null; onClose: () => void }) {
           <Select label="Template" clearable value={f.default_template || null} onChange={set('default_template')} data={['docx', 'xlsx', 'pptx']} />
         </Group>
         <TagsInput label="Allowed file extensions" value={(f.allowed_extensions || '').split(',').filter(Boolean)} onChange={(v) => set('allowed_extensions')(v.join(','))} />
-        <TagsInput label="Applicable breakdown levels" description="Empty = any level (e.g. SYSTEM, LRU)" value={(f.applicable_levels || '').split(',').filter(Boolean)} onChange={(v) => set('applicable_levels')(v.map((x) => x.toUpperCase()).join(','))} />
+        <TagsInput label="Applicable breakdown levels" description="Empty = any level (e.g. SYSTEM, UNIT)" value={(f.applicable_levels || '').split(',').filter(Boolean)} onChange={(v) => set('applicable_levels')(v.map((x) => x.toUpperCase()).join(','))} />
         <Textarea label="Description" value={f.description || ''} onChange={(e) => set('description')(e.currentTarget.value)} />
         <Switch label="Digital signature required before release" checked={f.requires_signature} onChange={(e) => set('requires_signature')(e.currentTarget.checked)} />
         <Switch label="Active" checked={f.active} onChange={(e) => set('active')(e.currentTarget.checked)} />

@@ -64,7 +64,7 @@ export default function ExplorerPage() {
   if (!projectId) return <div className="page"><EmptyBlock text="You are not assigned to any project yet." /></div>
   return (
     <div className="page" style={{ maxWidth: 1800 }}>
-      <PageTitle icon={<IconBinaryTree2 size={22} />} title="Product structure" sub="Navigate Aircraft → System → Subsystem → LRU and see every controlled document at each level."
+      <PageTitle icon={<IconBinaryTree2 size={22} />} title="Product structure" sub="Navigate Product → System → Subsystem → Unit and see every controlled document at each level."
         extra={<Select w={300} value={projectId} onChange={(v) => v && nav(`/explorer/${v}`)} data={(me?.projects || []).map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))} />} />
       <Grid gutter="md">
         <Grid.Col span={{ base: 12, lg: 4.5, xl: 3.8 }}>

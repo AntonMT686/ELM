@@ -91,7 +91,7 @@ function Packages({ canRelease }: { canRelease: boolean }) {
   return (
     <Stack>
       {canRelease && <Group justify="flex-end"><Button leftSection={<IconPlus size={16} />} onClick={m.open}>Prepare package</Button></Group>}
-      {!data?.length && <Card><EmptyBlock text="No release packages yet. Group approved documents (e.g. an LRU data pack) and release them together with one manifest." /></Card>}
+      {!data?.length && <Card><EmptyBlock text="No release packages yet. Group approved documents (e.g. a unit data pack) and release them together with one manifest." /></Card>}
       {data?.map((p) => (
         <Card key={p.id}>
           <Group justify="space-between">
@@ -117,7 +117,7 @@ function NewPackage({ opened, onClose }: { opened: boolean; onClose: () => void 
   return (
     <Modal opened={opened} onClose={onClose} size={700} title="Prepare release package">
       <Stack>
-        <TextInput label="Package title" required value={title} onChange={(e) => setTitle(e.currentTarget.value)} placeholder="e.g. FCC LRU data pack — CDR baseline" />
+        <TextInput label="Package title" required value={title} onChange={(e) => setTitle(e.currentTarget.value)} placeholder="e.g. CPU unit data pack — CDR baseline" />
         <Select label="Project" clearable value={project} onChange={setProject} data={(me?.projects || []).map((p) => ({ value: p.id, label: p.code }))} />
         <Textarea label="Release note" value={note} onChange={(e) => setNote(e.currentTarget.value)} autosize minRows={2} />
         <Text fw={600} size="sm">Approved documents ready for release</Text>

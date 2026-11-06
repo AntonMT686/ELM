@@ -1,4 +1,12 @@
-Place here (downloaded on the connected machine) before running prepare-offline-bundle.ps1:
-  1. Docker Desktop Installer.exe   - same version as on the build PC (docker version)
-  2. wsl.<version>.x64.msi          - from https://github.com/microsoft/WSL/releases
-They will be copied into the offline package automatically.
+Put the installers for the OFFLINE server here (download them on the connected PC) before running
+prepare-offline-bundle.ps1. They are copied into the package under offline\installers\.
+
+Required:
+  1. python-3.12.x-amd64.exe          https://www.python.org/downloads/windows/   (64-bit installer)
+  2. node-v22.x.x-x64.msi              https://nodejs.org/en/download               (LTS, 64-bit .msi)
+  3. vc_redist.x64.exe                 https://aka.ms/vs/17/release/vc_redist.x64.exe (often already installed)
+
+Only if the server does not have them yet:
+  4. Docker Desktop Installer.exe + wsl.<version>.x64.msi   (for the OnlyOffice container only)
+  5. XAMPP / MariaDB installer                              (proflow_uat normally exists already)
+  6. Git for Windows (Git-2.x-64-bit.exe)                   (developers who commit to the intranet GitLab)

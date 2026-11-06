@@ -23,7 +23,8 @@ from app.models import (
 )
 
 CATEGORIES = {"INITIAL", "ACTIVE", "HOLD", "DONE", "CANCELLED"}
-ACTORS = {"assignee", "reporter", "reviewer", "manager"}
+ACTORS = {"assignee", "reporter", "reviewer", "manager", "system"}
+# "system" moves are made only by ELM itself (for example when GitLab reports that a merge request was merged).
 WORK = ["assignee", "manager"]
 DECIDE = ["reviewer", "reporter", "manager"]
 
@@ -50,7 +51,36 @@ DEFAULT_LIFECYCLE: dict = {
         {"from": "IN_PROGRESS", "to": "CANCELLED", "label": "Cancel", "actors": ["reporter", "manager"], "reason": True},
     ],
 }
-DEFAULT_RULES = {"child_tasks_closed": True, "mandatory_checklist": True, "mandatory_deliverables": True, "predecessors": True}
+# Software development lifecycle (architecture §12.1), used for tasks of kind DEVELOPMENT unless configured otherwise.
+DEV_LIFECYCLE: dict = {
+    "states": [
+        {"code": "OPEN", "label": "Open", "category": "INITIAL", "color": "gray"},
+        {"code": "IN_PROGRESS", "label": "In progress", "category": "ACTIVE", "color": "blue"},
+        {"code": "CODE_REVIEW", "label": "Code review", "category": "ACTIVE", "color": "violet"},
+        {"code": "CHANGES_REQUESTED", "label": "Changes requested", "category": "ACTIVE", "color": "orange"},
+        {"code": "APPROVED", "label": "Approved", "category": "ACTIVE", "color": "cyan"},
+        {"code": "MERGED", "label": "Merged", "category": "ACTIVE", "color": "indigo"},
+        {"code": "TESTING", "label": "Testing", "category": "ACTIVE", "color": "grape"},
+        {"code": "COMPLETED", "label": "Completed", "category": "DONE", "color": "teal"},
+        {"code": "REJECTED", "label": "Rejected", "category": "CANCELLED", "color": "red"},
+    ],
+    "transitions": [
+        {"from": "OPEN", "to": "IN_PROGRESS", "label": "Start development", "actors": WORK},
+        {"from": "IN_PROGRESS", "to": "CODE_REVIEW", "label": "Submit for code review", "actors": WORK + ["system"]},
+        {"from": "CODE_REVIEW", "to": "CHANGES_REQUESTED", "label": "Request changes", "actors": DECIDE, "reason": True},
+        {"from": "CHANGES_REQUESTED", "to": "IN_PROGRESS", "label": "Resume work", "actors": WORK},
+        {"from": "CODE_REVIEW", "to": "APPROVED", "label": "Approve code", "actors": DECIDE},
+        {"from": "APPROVED", "to": "MERGED", "label": "Mark merged", "actors": ["manager", "system"]},
+        {"from": "MERGED", "to": "TESTING", "label": "Start testing", "actors": WORK + ["reviewer"]},
+        {"from": "TESTING", "to": "COMPLETED", "label": "Complete", "actors": DECIDE},
+        {"from": "TESTING", "to": "IN_PROGRESS", "label": "Testing failed", "actors": DECIDE + ["assignee"], "reason": True},
+        {"from": "OPEN", "to": "REJECTED", "label": "Reject", "actors": ["reporter", "manager"], "reason": True},
+        {"from": "IN_PROGRESS", "to": "REJECTED", "label": "Reject", "actors": ["reporter", "manager"], "reason": True},
+    ],
+}
+KIND_DEFAULTS: dict[str, dict] = {"DEVELOPMENT": DEV_LIFECYCLE}
+
+DEFAULT_RULES = {"child_tasks_closed": True, "mandatory_checklist": True, "mandatory_deliverables": True, "predecessors": True, "merged_merge_request": True}
 ACTIVE_PROGRESS_CAP = 95.0  # only the completion gate can give 100%
 
 
@@ -64,12 +94,36 @@ def _setting(db: Session, key: str) -> dict | None:
         return None
 
 
-def get_lifecycle(db: Session, project_id: uuid.UUID | None = None) -> dict:
+def get_lifecycle(db: Session, project_id: uuid.UUID | None = None, kind: str | None = None) -> dict:
+    """Most specific first: project + kind, kind, then (for kinds without their own lifecycle) project and the shared one."""
+    if kind:
+        if project_id:
+            own = _setting(db, f"task.lifecycle.{project_id}.{kind}")
+            if own:
+                return own
+        shared = _setting(db, f"task.lifecycle.kind.{kind}")
+        if shared:
+            return shared
+        if kind in KIND_DEFAULTS:
+            return KIND_DEFAULTS[kind]
     if project_id:
         own = _setting(db, f"task.lifecycle.{project_id}")
         if own:
             return own
     return _setting(db, "task.lifecycle") or DEFAULT_LIFECYCLE
+
+
+def lifecycle_for(db: Session, w: WorkItem) -> dict:
+    return get_lifecycle(db, w.project_id, w.kind)
+
+
+def merged_state_map(db: Session, project_id: uuid.UUID | None = None) -> dict[str, dict]:
+    """States of every lifecycle that can apply in a project, for views that mix task kinds (plans, boards, roll-ups)."""
+    out: dict[str, dict] = {}
+    for kind in KIND_DEFAULTS:
+        out.update(state_map(get_lifecycle(db, project_id, kind)))
+    out.update(state_map(get_lifecycle(db, project_id)))
+    return out
 
 
 def get_rules(db: Session) -> dict:
@@ -91,6 +145,8 @@ def initial_state(lc: dict) -> str:
 def closed_statuses(db: Session) -> set[str]:
     """Every code any configured lifecycle treats as closed, for filters that span projects."""
     out = codes_in(get_lifecycle(db), "DONE", "CANCELLED")
+    for kind in KIND_DEFAULTS:
+        out |= codes_in(get_lifecycle(db, None, kind), "DONE", "CANCELLED")
     rows = db.execute(select(SystemSetting).where(SystemSetting.key.like("task.lifecycle.%"))).scalars()
     for row in rows:
         try:
@@ -173,14 +229,13 @@ def calculate_progress(category: str, reported: float) -> float:
 
 def refresh_progress(db: Session, w: WorkItem) -> None:
     """Recalculate this task, then its ancestors. A parent is the weighted mean of its children that are not cancelled."""
-    lc = get_lifecycle(db, w.project_id)
-    states = state_map(lc)
+    states = merged_state_map(db, w.project_id)
     node: WorkItem | None = w
     seen: set[uuid.UUID] = set()
     while node is not None and node.id not in seen:
         seen.add(node.id)
         children = db.execute(select(WorkItem).where(WorkItem.parent_id == node.id)).scalars().all()
-        category = states.get(node.status, {}).get("category", "ACTIVE")
+        category = state_map(lifecycle_for(db, node)).get(node.status, {}).get("category", "ACTIVE")
         live = [c for c in children if states.get(c.status, {}).get("category") != "CANCELLED"]
         if live and category not in ("DONE", "CANCELLED"):
             total = sum(weight_of(c) for c in live)
@@ -196,7 +251,7 @@ def start_blockers(db: Session, w: WorkItem, lc: dict) -> list[str]:
     """Start-side dependency gates: FS needs the predecessor finished, SS needs it started."""
     if not get_rules(db)["predecessors"]:
         return []
-    states = state_map(lc)
+    states = {**merged_state_map(db, w.project_id), **state_map(lc)}
     out: list[str] = []
     for dep, pred in _preds(db, w):
         cat = states.get(pred.status, {}).get("category", "ACTIVE")
@@ -212,7 +267,7 @@ def start_blockers(db: Session, w: WorkItem, lc: dict) -> list[str]:
 def completion_blockers(db: Session, w: WorkItem, lc: dict) -> list[str]:
     """Why this task cannot be marked complete (architecture §9.4). Empty means it can."""
     rules = get_rules(db)
-    states = state_map(lc)
+    states = {**merged_state_map(db, w.project_id), **state_map(lc)}
     out: list[str] = []
     if rules["child_tasks_closed"]:
         for c in db.execute(select(WorkItem).where(WorkItem.parent_id == w.id)).scalars():
@@ -235,6 +290,10 @@ def completion_blockers(db: Session, w: WorkItem, lc: dict) -> list[str]:
                 out.append(f"Predecessor {pred.key} has not finished.")
             elif dep.dep_type == "SF" and cat == "INITIAL":
                 out.append(f"Predecessor {pred.key} has not started (start-to-finish).")
+    if rules.get("merged_merge_request") and w.kind == "DEVELOPMENT":
+        from app.services import scm
+
+        out.extend(scm.completion_blockers(db, w))
     return out
 
 
@@ -268,7 +327,7 @@ def has_other_reviewers(db: Session, w: WorkItem) -> bool:
 
 def available_transitions(db: Session, w: WorkItem, user_id: uuid.UUID, is_manager: bool) -> list[dict]:
     """What this user may do now, including blockers, so the UI can explain instead of failing later."""
-    lc = get_lifecycle(db, w.project_id)
+    lc = lifecycle_for(db, w)
     mine = actors_for(db, w, user_id, is_manager)
     states = state_map(lc)
     out = []
@@ -287,9 +346,10 @@ def available_transitions(db: Session, w: WorkItem, user_id: uuid.UUID, is_manag
     return out
 
 
-def transition(db: Session, w: WorkItem, to: str, *, user_id: uuid.UUID, is_manager: bool, comment: str | None = None) -> str:
-    """Validate and apply one transition. Returns the previous status. The caller audits and commits."""
-    lc = get_lifecycle(db, w.project_id)
+def transition(db: Session, w: WorkItem, to: str, *, user_id: uuid.UUID | None, is_manager: bool, comment: str | None = None, system: bool = False) -> str:
+    """Validate and apply one transition. Returns the previous status. The caller audits and commits.
+    system=True is used only by ELM itself (GitLab events); it acts as the "system" actor and never as a person."""
+    lc = lifecycle_for(db, w)
     states = state_map(lc)
     if to not in states:
         raise AppError(f"{to} is not a state in this lifecycle.", code="INVALID_STATE")
@@ -297,10 +357,11 @@ def transition(db: Session, w: WorkItem, to: str, *, user_id: uuid.UUID, is_mana
     if rule is None:
         allowed = sorted(t["to"] for t in lc["transitions"] if t["from"] == w.status)
         raise AppError(f"A task cannot move from {states.get(w.status, {}).get('label', w.status)} to {states[to]['label']}.", code="INVALID_TRANSITION", details={"allowed": allowed})
-    if not actors_for(db, w, user_id, is_manager) & set(rule["actors"]):
+    mine = {"system"} if system else actors_for(db, w, user_id, is_manager)
+    if not mine & set(rule["actors"]):
         raise Forbidden(f"You are not allowed to perform “{rule.get('label') or states[to]['label']}” on this task.", details={"actors": rule["actors"]})
     cat = states[to]["category"]
-    if user_id == w.assignee_id and cat == "DONE" and has_other_reviewers(db, w):
+    if not system and user_id == w.assignee_id and cat == "DONE" and has_other_reviewers(db, w):
         raise Forbidden("This task has a named reviewer, so its owner cannot accept it.", code="SOD_VIOLATION")
     if rule.get("reason") and not (comment or "").strip():
         raise AppError("A reason is required for this action.", code="REASON_REQUIRED")

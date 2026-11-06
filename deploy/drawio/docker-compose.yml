@@ -1,0 +1,12 @@
+# OPTIONAL: self-hosted draw.io for the embedded diagram editor on the Design page (architecture §11.3).
+# Without it, diagrams are uploaded as .drawio / .svg / .png files. Instead of this container you can also serve the
+# static draw.io "webapp" folder from any intranet web server; then put that URL in ELM_DRAWIO_URL.
+#     docker compose -f deploy/drawio/docker-compose.yml up -d        ->  ELM_DRAWIO_URL=http://<server>:8081
+# Offline: docker load -i offline\images\drawio-24.7.17.tar first.
+name: ada-elm-drawio
+services:
+  drawio:
+    image: jgraph/drawio:24.7.17
+    pull_policy: missing
+    restart: unless-stopped
+    ports: ["8081:8080"]

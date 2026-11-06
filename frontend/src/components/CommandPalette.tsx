@@ -13,7 +13,7 @@ export const openPalette = () => spotlight.open()
 const QUICK = [
   { title: 'Open my action inbox', path: '/inbox' },
   { title: 'Create a new document', path: '/documents?new=1' },
-  { title: 'Browse the product structure (Aircraft → System → LRU)', path: '/explorer' },
+  { title: 'Browse the product structure (Product → System → Unit)', path: '/explorer' },
   { title: 'Search the Release Register', path: '/releases' },
   { title: 'My tasks board', path: '/tasks' },
 ]
@@ -43,7 +43,7 @@ export default function CommandPalette() {
 
   return (
     <Spotlight.Root query={q} onQueryChange={setQ} shortcut={['mod + K', '/']} scrollable maxHeight={460} radius="lg">
-      <Spotlight.Search placeholder="Search documents, LRUs, systems, people…  (try “FCC” or “ICD”)" leftSection={<IconSearch size={18} />} rightSection={isFetching ? <Loader size="xs" /> : null} />
+      <Spotlight.Search placeholder="Search documents, units, systems, people…  (try “CPU” or “ICD”)" leftSection={<IconSearch size={18} />} rightSection={isFetching ? <Loader size="xs" /> : null} />
       <Spotlight.ActionsList>
         {deb.length < 2 && <Spotlight.ActionsGroup label="Quick actions">{actions}</Spotlight.ActionsGroup>}
         {deb.length >= 2 && (actions.length ? actions : <Spotlight.Empty>{isFetching ? 'Searching…' : 'No matches'}</Spotlight.Empty>)}

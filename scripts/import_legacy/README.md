@@ -32,16 +32,18 @@ cd backend
 python -m app.legacy_import.load ../scripts/import_legacy/pms_bundle.json
 ```
 
-Docker (rebuild first, so the image has this code and migration `0002_planning`):
+On the ELM server (the backend virtual environment from `deploy/windows/setup.ps1`; the ELM tables must be at the
+latest migration, which `setup.ps1` / `python -m app.dbsetup` ensures):
 
-```bash
-docker compose up -d --build backend worker web
-docker compose cp scripts/import_legacy/pms_bundle.json backend:/tmp/pms_bundle.json
-docker compose cp scripts/import_legacy/pms_bundle.json.sha256 backend:/tmp/pms_bundle.json.sha256
-docker compose exec backend python -m app.legacy_import.load /tmp/pms_bundle.json --report-dir /tmp/import_reports
+```bat
+cd backend
+.venv\Scripts\python -m app.legacy_import.load ..\scripts\import_legacy\pms_bundle.json --report-dir ..\import_reports
 ```
 
-Read the report, then repeat the same command with `--commit`. Copy the report out with `docker compose cp backend:/tmp/import_reports ./import_reports`, and delete the bundle from the container afterwards.
+Read the report, then repeat the same command with `--commit`. Delete the bundle afterwards.
+
+Because ELM now lives in the same `proflow_uat` database, the extract can also run on the server itself
+(`--port 3309 --database proflow_uat`). The extractor only reads the PMS tables; it ignores the `elm_*` tables.
 
 | Option | Effect |
 |---|---|

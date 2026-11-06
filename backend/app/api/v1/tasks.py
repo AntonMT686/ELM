@@ -42,7 +42,7 @@ from app.services.serial import iso, user_brief
 
 router = APIRouter(tags=["tasks"])
 
-KINDS = r"^(TASK|ACTION|MILESTONE|CHANGE_REQUEST|ISSUE)$"
+KINDS = r"^(TASK|ACTION|MILESTONE|CHANGE_REQUEST|ISSUE|DEVELOPMENT)$"
 PRIORITIES = r"^(LOW|MEDIUM|HIGH|CRITICAL)$"
 
 
@@ -148,7 +148,8 @@ def _detail(ctx: Ctx, w: WorkItem) -> dict:
         "can_edit": manager or ctx.user.id in (w.assignee_id, w.reporter_id),
         "can_manage": manager,
         "transitions": lc.available_transitions(db, w, ctx.user.id, manager),
-        "completion_blockers": lc.completion_blockers(db, w, lc.get_lifecycle(db, w.project_id)),
+        "completion_blockers": lc.completion_blockers(db, w, lc.lifecycle_for(db, w)),
+        "lifecycle": lc.lifecycle_for(db, w),
         "contributors": [user_brief(u) for p, u in parts if p.role == "CONTRIBUTOR"],
         "reviewers": [user_brief(u) for p, u in parts if p.role == "REVIEWER"],
         "predecessors": [dep_row(x, o) for x, o in preds],
@@ -164,10 +165,11 @@ def _detail(ctx: Ctx, w: WorkItem) -> dict:
 
 # ------------------------------------------------------------------ lifecycle configuration
 @router.get("/task-lifecycle")
-def get_task_lifecycle(project_id: uuid.UUID | None = None, ctx: Ctx = Depends(get_ctx)):
+def get_task_lifecycle(project_id: uuid.UUID | None = None, kind: str | None = Query(None, pattern=KINDS), ctx: Ctx = Depends(get_ctx)):
     if project_id:
         require_view_project(ctx.db, ctx.p, project_id)
-    return {**lc.get_lifecycle(ctx.db, project_id), "completion_rules": lc.get_rules(ctx.db), "default": lc.DEFAULT_LIFECYCLE}
+    return {**lc.get_lifecycle(ctx.db, project_id, kind), "completion_rules": lc.get_rules(ctx.db), "default": lc.KIND_DEFAULTS.get(kind or "", lc.DEFAULT_LIFECYCLE),
+            "kinds_with_own_lifecycle": sorted(lc.KIND_DEFAULTS)}
 
 
 class LifecycleIn(BaseModel):
@@ -177,17 +179,29 @@ class LifecycleIn(BaseModel):
 
 
 @router.put("/task-lifecycle")
-def set_task_lifecycle(body: LifecycleIn, project_id: uuid.UUID | None = None, ctx: Ctx = Depends(get_ctx)):
+def set_task_lifecycle(body: LifecycleIn, project_id: uuid.UUID | None = None, kind: str | None = Query(None, pattern=KINDS), ctx: Ctx = Depends(get_ctx)):
     ctx.p.require("workflow.configure")
     new = {"states": body.states, "transitions": body.transitions}
     errors = lc.validate_lifecycle(new)
     codes = {s.get("code") for s in body.states}
     q = select(WorkItem.status).distinct()
+    if kind:
+        q = q.where(WorkItem.kind == kind)
+    elif lc.KIND_DEFAULTS:
+        q = q.where(WorkItem.kind.not_in(list(lc.KIND_DEFAULTS)))
     if project_id:
         q = q.where(WorkItem.project_id == project_id)
-    else:
+    elif not kind:
         # the shared lifecycle governs every project that has no override of its own
-        overridden = [uuid.UUID(k.rsplit(".", 1)[1]) for k in ctx.db.execute(select(SystemSetting.key).where(SystemSetting.key.like("task.lifecycle.%"))).scalars()]
+        overridden = []
+        for k in ctx.db.execute(select(SystemSetting.key).where(SystemSetting.key.like("task.lifecycle.%"))).scalars():
+            parts = k.split(".")
+            if len(parts) != 3:
+                continue  # task.lifecycle.kind.<KIND> and task.lifecycle.<project>.<KIND> govern other kinds
+            try:
+                overridden.append(uuid.UUID(parts[2]))
+            except ValueError:
+                continue
         if overridden:
             q = q.where(or_(WorkItem.project_id.is_(None), WorkItem.project_id.not_in(overridden)))
     used = set(ctx.db.execute(q).scalars())
@@ -195,7 +209,12 @@ def set_task_lifecycle(body: LifecycleIn, project_id: uuid.UUID | None = None, c
         errors.append(f"State {code} cannot be removed because tasks are using it.")
     if errors:
         raise AppError("The task lifecycle is not valid.", code="LIFECYCLE_INVALID", details={"errors": errors})
-    key = f"task.lifecycle.{project_id}" if project_id else "task.lifecycle"
+    if kind and project_id:
+        key = f"task.lifecycle.{project_id}.{kind}"
+    elif kind:
+        key = f"task.lifecycle.kind.{kind}"
+    else:
+        key = f"task.lifecycle.{project_id}" if project_id else "task.lifecycle"
     row = ctx.db.get(SystemSetting, key)
     if row:
         row.value = json.dumps(new)
@@ -307,7 +326,7 @@ def create_work_item(body: WorkItemIn, ctx: Ctx = Depends(get_ctx)):
     if body.project_id and not manager and not can_view_project(ctx.db, ctx.p, body.project_id):
         raise Forbidden("You do not have access to this project.")
     project = ctx.db.get(Project, body.project_id) if body.project_id else None
-    life = lc.get_lifecycle(ctx.db, body.project_id)
+    life = lc.get_lifecycle(ctx.db, body.project_id, body.kind)
     prefix = project.code if project else "TSK"
     w = WorkItem(key=f"{prefix}-{next_seq(ctx.db, 'wi:' + prefix)}", reporter_id=ctx.user.id, status=lc.initial_state(life), **body.model_dump())
     ctx.db.add(w)
@@ -332,6 +351,8 @@ def update_work_item(wid: uuid.UUID, body: WorkItemIn, version: int | None = Non
     if body.assignee_id != w.assignee_id and not manager and body.assignee_id != ctx.user.id:
         raise Forbidden("Reassigning this task needs task management permission in this scope.")
     _validate_links(ctx, body, wid)
+    if body.kind != w.kind and w.status not in lc.state_map(lc.get_lifecycle(ctx.db, body.project_id, body.kind)):
+        raise AppError(f"A {w.kind.lower()} task in status {w.status} cannot become {body.kind.lower()}: that lifecycle has no such status.", code="INVALID_STATE")
     old_assignee = w.assignee_id
     for k, v in body.model_dump().items():
         setattr(w, k, v)

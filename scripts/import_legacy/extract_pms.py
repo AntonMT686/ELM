@@ -108,7 +108,8 @@ def main() -> int:
     cur.execute("START TRANSACTION WITH CONSISTENT SNAPSHOT")  # all tables as of one moment
 
     cur.execute("SELECT table_name AS t FROM information_schema.tables WHERE table_schema = %s AND table_type = 'BASE TABLE' ORDER BY table_name", (args.database,))
-    all_tables = [r["t"] for r in cur.fetchall()]
+    # ELM shares proflow_uat; its own tables (elm_*) are not PMS data, so they are left out of the inventory.
+    all_tables = [r["t"] for r in cur.fetchall() if not r["t"].lower().startswith("elm_")]
     inventory: dict[str, int] = {}
     for t in all_tables:
         cur.execute(f"SELECT COUNT(*) AS n FROM `{t}`")

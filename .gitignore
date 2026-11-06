@@ -9,3 +9,7 @@ backend/wheels/*.whl
 .venv/
 import_reports/
 pms_bundle*.json*
+/data/
+backend/.venv/
+logs/
+offline-packages/

@@ -208,7 +208,7 @@ function ReviseModal({ opened, onClose, d }: { opened: boolean; onClose: () => v
     <Modal opened={opened} onClose={onClose} title="Start a new revision">
       <Stack>
         <Text size="sm" c="dimmed">The released revision stays untouched in the register. A new draft revision is created as a copy for you to change.</Text>
-        <Textarea label="Reason for change / change summary" required autosize minRows={3} value={summary} onChange={(e) => setSummary(e.currentTarget.value)} placeholder="e.g. Incorporate CDR action items 12–18; ECR AMCA-ECR-2026-0004" />
+        <Textarea label="Reason for change / change summary" required autosize minRows={3} value={summary} onChange={(e) => setSummary(e.currentTarget.value)} placeholder="e.g. Incorporate CDR action items 12–18; ECR ALPHA-ECR-2026-0004" />
         <Group justify="flex-end"><Button variant="default" onClick={onClose}>Cancel</Button><Button disabled={summary.length < 3} loading={act.isPending} onClick={() => act.mutate(undefined)}>Create revision</Button></Group>
       </Stack>
     </Modal>

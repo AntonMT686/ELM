@@ -8,7 +8,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, auth, dashboard, documents, engineering, misc, onlyoffice, planning, releases, requirements, tasks, workflow
+from app.api.v1 import admin, auth, dashboard, deployments, design, documents, engineering, misc, onlyoffice, planning, releases, requirements, scm, tasks, testing, workflow
 from app.core.config import get_settings
 from app.core.errors import install_error_handlers
 
@@ -18,14 +18,15 @@ settings = get_settings()
 app = FastAPI(
     title="ADA ELM API",
     version="0.1.0",
-    description="Engineering Lifecycle Management — documents, workflows, signatures and releases for Aircraft → System → LRU.",
+    description="Engineering Lifecycle Management — documents, workflows, signatures and releases for Product → System → Unit.",
     docs_url="/api/docs" if settings.environment != "prod" else None,
     openapi_url="/api/openapi.json" if settings.environment != "prod" else None,
     redoc_url=None,
 )
 install_error_handlers(app)
 
-CSRF_EXEMPT = ("/api/v1/auth/login", "/api/v1/onlyoffice/callback/")
+# Callbacks from OnlyOffice, GitLab and test runners carry no browser session; they are authenticated by their own JWT / secret token.
+CSRF_EXEMPT = ("/api/v1/auth/login", "/api/v1/onlyoffice/callback/", "/api/v1/scm/gitlab/webhook", "/api/v1/test-automation/", "/api/v1/deployments/callback")
 
 
 @app.middleware("http")
@@ -45,7 +46,7 @@ async def security_mw(request: Request, call_next):
     return response
 
 
-for r in (auth.router, admin.router, engineering.router, documents.router, workflow.router, releases.router, dashboard.router, misc.router, onlyoffice.router, tasks.router, planning.router, requirements.router):
+for r in (auth.router, admin.router, engineering.router, documents.router, workflow.router, releases.router, dashboard.router, misc.router, onlyoffice.router, tasks.router, planning.router, requirements.router, scm.router, design.router, testing.router, deployments.router):
     app.include_router(r, prefix="/api/v1")
 
 
@@ -55,12 +56,10 @@ def health():
 
 
 @app.on_event("startup")
-def _startup():  # dev convenience; production uses `alembic upgrade head` + `python -m app.seed`
+def _startup():  # dev convenience; UAT/PROD run `python -m app.dbsetup` once per release instead
     if settings.environment == "dev":
-        from app.core.db import Base, engine
-        import app.models  # noqa: F401
-
-        Base.metadata.create_all(engine)
+        from app.dbsetup import upgrade_schema
         from app.seed import run
 
+        upgrade_schema()
         run()

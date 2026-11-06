@@ -205,10 +205,12 @@ def rtm_csv(pid: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
     data = svc.rtm(ctx.db, pid)
     buf = io.StringIO()
     out = csv.writer(buf)
-    out.writerow(["key", "title", "status", "revision", "priority", "type", "tasks", "documents", "traces_to", "traced_by", "baselines"])
+    out.writerow(["key", "title", "status", "revision", "priority", "type", "tasks", "documents", "traces_to", "traced_by", "baselines", "designs", "merge_requests", "tests", "defects"])
     for r in data["rows"]:
         out.writerow([_safe(x) for x in [r["key"], r["title"], r["status"], r["revision"], r["priority"], r["req_type"], " ".join(t["key"] for t in r["tasks"]), " ".join(d["number"] for d in r["documents"]),
-                                          " ".join(f"{t['type']}:{t['key']}" for t in r["traces_to"]), " ".join(f"{t['type']}:{t['key']}" for t in r["traced_by"]), " ".join(str(s) for s in r["baselines"])]])
+                                          " ".join(f"{t['type']}:{t['key']}" for t in r["traces_to"]), " ".join(f"{t['type']}:{t['key']}" for t in r["traced_by"]), " ".join(str(s) for s in r["baselines"]),
+                                          " ".join(d["key"] for d in r["designs"]), " ".join(f"{c['ref']}:{c['state']}" for c in r["code"]), " ".join(f"{t['key']}:{t['last_result'] or 'not run'}" for t in r["tests"]),
+                                          " ".join(f"{d['key']}:{d['status']}" for d in r["defects"])]])
     ctx.audit("requirement.rtm.export", "project", p.id, f"RTM of {p.code} exported", {"rows": len(data["rows"])})
     ctx.db.commit()
     return Response("﻿" + buf.getvalue(), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": f'attachment; filename="rtm-{p.code}.csv"'})

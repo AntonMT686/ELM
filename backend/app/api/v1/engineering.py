@@ -1,4 +1,4 @@
-"""Projects/programmes and the configurable product breakdown (Aircraft → System → Subsystem → LRU → SRU)."""
+"""Projects/programmes and the configurable product breakdown (Product → System → Subsystem → Unit → Module)."""
 from __future__ import annotations
 
 import uuid
@@ -98,7 +98,7 @@ def create_project(body: ProjectIn, ctx: Ctx = Depends(get_ctx)):
     p = Project(**body.model_dump(exclude={"levels", "contributing_org_ids"}))
     ctx.db.add(p)
     ctx.db.flush()
-    levels = body.levels or [LevelIn(code="AIRCRAFT", name="Aircraft"), LevelIn(code="SYSTEM", name="System"), LevelIn(code="SUBSYSTEM", name="Subsystem"), LevelIn(code="LRU", name="LRU")]
+    levels = body.levels or [LevelIn(code="PRODUCT", name="Product"), LevelIn(code="SYSTEM", name="System"), LevelIn(code="SUBSYSTEM", name="Subsystem"), LevelIn(code="UNIT", name="UNIT")]
     for i, lv in enumerate(levels, 1):
         ctx.db.add(HierarchyLevel(project_id=p.id, level_no=i, **lv.model_dump()))
     if body.lead_org_unit_id:

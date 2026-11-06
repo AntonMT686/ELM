@@ -53,9 +53,9 @@ This document supersedes the legacy technology and deployment assumptions in the
 ### 1.1 Main product objectives
 
 - Provide one common process platform for multiple ADA directorates and departments.
-- Manage multiple projects such as **AMCA**, **Mk1**, and other programmes without hard-coding project names.
-- Support engineering product structures such as **Project → LRU → ECFM**, while allowing additional or different hierarchy levels (for example System and Subsystem).
-- Map employees to directorates, departments, projects, systems, subsystems, LRUs, and roles as authorized.
+- Manage multiple projects such as **Product Alpha**, **Product Beta**, and other programmes without hard-coding project names.
+- Support engineering product structures such as **Project → Unit → Component**, while allowing additional or different hierarchy levels (for example System and Subsystem).
+- Map employees to directorates, departments, projects, systems, subsystems, units, and roles as authorized.
 - Navigate users to a dashboard based on their organization scope, assignments, responsibilities, and permissions.
 - Enable the SDLC process for software-related work and separate configurable engineering/process flows for hardware and other work domains.
 - Manage documents from Head Directorate level through directorate and department work products, including parent/child and derived-document relationships.
@@ -83,7 +83,7 @@ This document supersedes the legacy technology and deployment assumptions in the
 The system must represent two related but distinct structures:
 
 1. **Organization structure:** ADA → Directorate → Department/Division/Group → Employee.
-2. **Programme/product structure:** Programme/Project → System → Subsystem → LRU → Equipment/Component/Artifact.
+2. **Programme/product structure:** Programme/Project → System → Subsystem → Unit → Equipment/Component/Artifact.
 
 The two structures are connected through project participation and responsibility assignments. Do not force a single hierarchy to represent both.
 
@@ -93,7 +93,7 @@ The two structures are connected through project participation and responsibilit
 flowchart TD
     ADA["ADA Organization"]
     ADA --> DIR1["Directorate (e.g. Admin)"]
-    ADA --> DIR2["Directorate (e.g. AWS)"]
+    ADA --> DIR2["Directorate (e.g. ELX)"]
     ADA --> DIR3["Directorate (e.g. ICT)"]
     DIR1 --> D1["Department / Division / Group"]
     DIR2 --> D2["Department / Division / Group"]
@@ -109,18 +109,18 @@ Directorate and department names are **master data**, not enum values in code. T
 
 ```mermaid
 flowchart TD
-    P["Programme / Project<br/>AMCA, Mk1, ..."]
+    P["Programme / Project<br/>Product Alpha, Product Beta, ..."]
     P --> SYS["System"]
     SYS --> SUB["Subsystem"]
-    SUB --> LRU["LRU"]
-    LRU --> COMP["Equipment / Component / ECFM / other item"]
+    SUB --> Unit["Unit"]
+    Unit --> COMP["Equipment / Component / other item"]
 ```
 
-- The supplied example **AMCA → LRU → ECFM** must be representable.
+- The supplied example **Product Alpha → Unit → Component** must be representable.
 - Some projects may have System and Subsystem levels; others may use a different breakdown.
 - The product breakdown must therefore be configurable by project/programme (hierarchy type and allowed levels).
 - An engineering item may have its own owner directorate, contributing directorates, technical authority, responsible department, and document set.
-- Do not assume that every LRU belongs to only one directorate. Support a lead owner plus multiple contributing organizations where approved.
+- Do not assume that every Unit belongs to only one directorate. Support a lead owner plus multiple contributing organizations where approved.
 
 ### 2.3 Organization-to-project mapping
 
@@ -145,8 +145,8 @@ Minimum relationships:
 | User / Employee | Authenticated identity and employee profile |
 | Role / Permission | Business role and action permission |
 | Role Assignment | Role granted to a user or group within a defined scope and validity period |
-| Programme / Project | AMCA, Mk1, and other project/programme records |
-| Product Breakdown / Engineering Item | System, subsystem, LRU, ECFM, equipment, component, or configured level |
+| Programme / Project | Product Alpha, Product Beta, and other project/programme records |
+| Product Breakdown / Engineering Item | System, subsystem, Unit, Component, equipment, component, or configured level |
 | Project Directorate Assignment | Lead and contributing directorates for a project |
 | Process Domain | Software, hardware, systems engineering, administration, or an ADA-configured domain |
 | Workflow Definition | Configurable process template, versioned and published |
@@ -194,7 +194,7 @@ Dashboards are permission- and scope-driven, not just role-name-driven.
 | Department Head | Department work packages, assigned documents, team workload, upcoming reviews, open actions |
 | Project Director / Project Manager | Planning and milestones, project-level phase completion, risks, document/release readiness, directorate contributions |
 | PGD / TD | Display the exact ADA-approved role labels and responsibilities from master configuration; support configurable portfolio/technical oversight widgets without hard-coding acronym expansions |
-| Project Engineer / Technical Owner | Assigned system/subsystem/LRU, documents, tasks, reviews, requirements and engineering dependencies |
+| Project Engineer / Technical Owner | Assigned system/subsystem/Unit, documents, tasks, reviews, requirements and engineering dependencies |
 | Team Member / Engineer | My assigned tasks, authored documents, required reviews, current workflow actions, due dates and notifications |
 | Process / Quality / Configuration Admin | Workflow configuration, templates, audit, baselines, release governance and compliance reports |
 | System Administrator | User/identity configuration, organization master data, integrations, runtime and security configuration; business approval rights are not automatically implied |
@@ -344,7 +344,7 @@ The system has common platform modules plus domain modules. Module access and wo
 - User/employee management: employee identifier, display name, email, active state, organization memberships, project assignments and identity source.
 - Role and permission administration: global and scoped roles; role inheritance; explicit permission catalogue.
 - Project/programme management: project codes, programme, sponsor/authority, dates, status, directorate participation, milestones and project configuration.
-- Product breakdown management: configurable System/Subsystem/LRU/component levels and relationships.
+- Product breakdown management: configurable System/Subsystem/Unit/component levels and relationships.
 - Process-domain configuration: software, hardware, systems, administrative, hybrid and ADA-defined domains.
 - Workflow designer: stages, transitions, forms, role routing, conditions, SLAs, escalation, parallel/sequential approvals, signature and release requirements.
 - Document type/template management: metadata fields, numbering schemes, format rules, retention and workflow mapping.
@@ -358,7 +358,7 @@ The system has common platform modules plus domain modules. Module access and wo
 - Project portfolio with project-level milestones and overall completion.
 - Project plan, WBS, activities, task/sub-task, dependencies, assigned owners, dates, effort, risk and progress.
 - Directorate-wise and department-wise responsibility assignment.
-- System/subsystem/LRU/product breakdown, ownership and contributor mapping.
+- System/subsystem/Unit/product breakdown, ownership and contributor mapping.
 - Cross-directorate work packages and shared deliverables.
 - Project baseline, change control and milestone history.
 - Project context selector that respects user permissions.
@@ -402,7 +402,7 @@ Each project/work package can map to a customized SDLC workflow version.
 Provide common configurable workflow/document capabilities and allow ADA to add domain-specific modules. The initial platform should support:
 
 - Engineering work package and deliverable planning.
-- System/subsystem/LRU/product breakdown and responsibility.
+- System/subsystem/Unit/product breakdown and responsibility.
 - Engineering document creation, revision, review and release.
 - Design/analysis artifacts and diagrams.
 - Requirement capture and traceability, including imported requirements from other tools.
@@ -411,7 +411,7 @@ Provide common configurable workflow/document capabilities and allow ADA to add 
 - Cross-directorate review and technical concurrence.
 - Release readiness and release document package.
 
-Do not invent a complete aircraft engineering lifecycle or mandatory artefacts. The exact hardware/equipment workflows, document types, compliance gates and domain fields must be configured from ADA-approved process documents.
+Do not invent a complete product engineering lifecycle or mandatory artefacts. The exact hardware/equipment workflows, document types, compliance gates and domain fields must be configured from ADA-approved process documents.
 
 ### 6.6 Dashboard and reports
 
@@ -419,7 +419,7 @@ Do not invent a complete aircraft engineering lifecycle or mandatory artefacts. 
 - For hardware or other domains, compute progress using that workflow's configured phases and completion weights.
 - Show phase status and completion with clear numerator/denominator and aggregation rules.
 - Show directorate/department contribution, overdue work, bottlenecks, review aging, upcoming milestones, risks, document readiness and release status.
-- Support drill-down: programme → project → directorate → department → system → subsystem → LRU → document/work item, subject to access.
+- Support drill-down: programme → project → directorate → department → system → subsystem → Unit → document/work item, subject to access.
 - Generate reports as PDF by default; preview the PDF inside the application with a local PDF viewer.
 - Provide controlled exports (PDF, XLSX/CSV, DOCX when required) according to permissions and policy.
 - Report output must include generation time, filters, project/context, data cut-off, report owner and appropriate document classification label.
@@ -479,7 +479,7 @@ At minimum support the following configurable metadata (not all fields are manda
 - Owning / responsible directorate and department.
 - Contributing directorates/departments.
 - Process domain (software, hardware, hybrid, other).
-- System, subsystem, LRU or configured engineering item.
+- System, subsystem, Unit or configured engineering item.
 - Parent document and relationship type.
 - Revision, version, status and baseline.
 - Author/prepared-by, checker, reviewer, approver and release authority.
@@ -511,7 +511,7 @@ Required behaviour:
 - A release package records project, scope, release identifier, release date, package owner, release authority, included documents/revisions and package manifest.
 - Package manifest records each included document ID, revision, hash, signature state and applicable source baseline.
 - Head Directorate users can filter and drill down across authorized projects/directorates; other users see only the scope they are granted.
-- Search by document number/title, project, directorate, department, system/subsystem/LRU, document type, revision, release ID and date.
+- Search by document number/title, project, directorate, department, system/subsystem/Unit, document type, revision, release ID and date.
 - A released record cannot be silently replaced or removed. Withdraw/supersede actions require a configured authority, reason and new audit event.
 - Provide a stable view/download of the exact released revision and its release evidence.
 - Generate PDF release transmittal / index report from the release package.
@@ -725,7 +725,7 @@ Use permission checks across all relevant dimensions:
 - Action: view, list, create, edit, upload, download, comment, assign, submit, review, approve, sign, release, withdraw, archive, administer, configure.
 - Organization: directorate, department, group.
 - Project/programme.
-- Engineering item: system, subsystem, LRU, component.
+- Engineering item: system, subsystem, Unit, component.
 - Document and revision.
 - Workflow instance and assigned step.
 - Data handling/classification label.
@@ -1199,7 +1199,7 @@ Seed only safe development/demo data. Production organization and employees must
 Configurable master data should include:
 
 - Directorate and department hierarchy.
-- Project/programme records (AMCA, Mk1, etc. only where approved).
+- Project/programme records (Product Alpha, Product Beta, etc. only where approved).
 - Engineering hierarchy types and allowed levels.
 - Process domains (software, hardware, hybrid, administration and additional configured domains).
 - Role catalogue and permission mappings.
@@ -1297,7 +1297,7 @@ The coding agent must implement in small, verifiable vertical slices. Do not gen
 ## 23. Acceptance Criteria — System-Level
 
 1. A user mapped to one or more directorates sees only permitted directorate/project/engineering-item contexts.
-2. The system can represent multiple projects (including AMCA/Mk1 examples), configurable system/subsystem/LRU hierarchy and the supplied AMCA → LRU → ECFM relationship.
+2. The system can represent multiple projects (including Product Alpha / Product Beta examples), configurable system/subsystem/Unit hierarchy and the supplied Product Alpha → Unit → Component relationship.
 3. A project/work package can activate a software SDLC workflow, hardware workflow, hybrid workflow or other configured process without code changes.
 4. A Head Directorate document can be decomposed into related second-level and directorate/department documents, retaining parent/child provenance.
 5. Document workflows can be configured with prepared-by, checked-by, reviewed-by and approved-by stages, including different routing by document type/domain/directorate.
@@ -1376,7 +1376,7 @@ Status, decisions and backlog are in `Docs/HANDOFF.md` (the source of truth for 
 |---|---|
 | §4.1 UI library | **Mantine 7** (+ Tabler icons, Mantine Charts, Spotlight, Dropzone, Dates), React Flow, PDF.js; all bundled locally |
 | §4.1 Background jobs | DB-backed worker (`python -m app.worker`); Redis/Celery deferred |
-| §2.2 Breakdown | Per-project `hierarchy_levels` (AMCA: AIRCRAFT→SYSTEM→SUBSYSTEM→LRU→SRU; MK1: AIRCRAFT→LRU→ECFM) with materialised paths for subtree queries and roll-ups |
+| §2.2 Breakdown | Per-project `hierarchy_levels` (ALPHA: PRODUCT→SYSTEM→SUBSYSTEM→UNIT→MODULE; BETA: PRODUCT→UNIT→COMPONENT) with materialised paths for subtree queries and roll-ups |
 | §3.3 Non-engineering | Document categories ENGINEERING / MANAGEMENT / NON_ENGINEERING; administrative docs and tasks use the same engine with lighter workflows (e.g. single approval + auto-release, no signature) |
 | §7.2 Revisions | Revision (A, B, …) + saved **iterations**; reviews bind to iteration SHA-256; revision locked while in review |
 | §9 Workflow | Versioned JSON spec with publish-time validation; most-specific binding wins; instances pinned to version |
@@ -1385,3 +1385,7 @@ Status, decisions and backlog are in `Docs/HANDOFF.md` (the source of truth for 
 | §8.8 Planning and tasks | Implemented in session 3; see `ARCHITECTURE_WORKFLOWS.md` §25 and `HANDOFF.md` §2b. `WorkItem` is the task table. XLSX, MS Project XML and Jira are not implemented |
 | §16.3 ProFlow migration | Two steps: `scripts/import_legacy/extract_pms.py` (read-only JSON bundle) and `python -m app.legacy_import.load` (dry run, commit, rollback, reconciliation). Covers users, projects, breakdown, plans, milestones, tasks, dependencies, history and legacy audit. Requirements, design, development, test, deployment and maintenance data are reported as deferred until their sections are built |
 | §8.2 Requirement management | Implemented in session 3; see `ARCHITECTURE_WORKFLOWS.md` §25 and `HANDOFF.md` §2c. In-document tagging through OnlyOffice, ReqIF and live DOORS are not implemented |
+| Database and runtime (session 4) | **MySQL/MariaDB `proflow_uat`**, shared with the legacy PMS; every ELM table is prefixed `elm_` and the legacy tables are never changed. Backend, worker and frontend run as host processes; only OnlyOffice runs in Docker. See `Docs/RUNNING.md` and `Docs/OFFLINE_DEPLOYMENT.md` |
+| §8 Design, development, testing (session 4) | Architecture §11–§13 implemented; see `ARCHITECTURE_WORKFLOWS.md` §25 and `HANDOFF.md` §2d. GitLab is the integrated source-control provider |
+| Demo data (session 4) | Generic names only (Product Alpha/Beta, Control/Electronics directorates, Unit/Module/Component levels); no aircraft or equipment names |
+

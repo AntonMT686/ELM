@@ -7,6 +7,7 @@ Create Date: ${create_date}
 from alembic import op
 import sqlalchemy as sa
 ${imports if imports else ""}
+import app.models.types  # noqa: F401  (UTCDateTime / LongText used by autogenerate)
 
 revision = ${repr(up_revision)}
 down_revision = ${repr(down_revision)}

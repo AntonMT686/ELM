@@ -6,7 +6,10 @@ starlette==0.41.3
 uvicorn==0.32.1
 sqlalchemy==2.0.36
 alembic==1.14.0
-psycopg[binary]==3.2.3
+# MySQL / MariaDB driver (pure Python, so the offline wheel works on any OS). cryptography below covers caching_sha2_password.
+PyMySQL==1.1.1
+# Time-zone database for zoneinfo (Windows has none built in); used for deployment change windows.
+tzdata==2025.2
 pydantic==2.10.3
 pydantic-settings==2.7.0
 python-multipart==0.0.19

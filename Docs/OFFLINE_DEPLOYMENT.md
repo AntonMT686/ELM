@@ -1,164 +1,150 @@
-# ADA-ELM — Offline (Air-gapped) Deployment on Windows
+# ADA-ELM — Offline (air-gapped) deployment
 
-Everything runs in Docker containers: **web** (nginx + UI), **backend** (FastAPI), **worker**, **db** (PostgreSQL),
-**onlyoffice** (document editor). The offline server needs **no Python, Node.js, PostgreSQL or internet**: only Docker Desktop.
+The application does **not** run in Docker. On the offline server it runs as three processes (backend, worker,
+frontend) from a Python virtual environment and Node.js, against the existing MySQL/MariaDB database **`proflow_uat`**.
+Only **OnlyOffice** runs in Docker (and, optionally, draw.io). GitLab is the instance already running on the intranet.
+
+Everything the server needs is prepared on a **connected PC** and carried over in one folder. Nothing is downloaded on
+the offline server.
 
 ---
 
-## 1. Server requirements
+## 1. Prerequisites
+
+### 1.1 Offline server — hardware
 
 | Item | Minimum | Recommended |
 |---|---|---|
-| OS | Windows 10/11 Pro or Enterprise, 64-bit, version 22H2 or later | Windows 11 Enterprise 23H2+ |
-| CPU | 4 cores, **virtualization enabled in BIOS/UEFI** (Intel VT-x / AMD-V) | 8 cores |
-| RAM | 8 GB | 16 GB (OnlyOffice alone uses 2–4 GB) |
-| Disk | 40 GB free (images ~5 GB + data) on an SSD | 200 GB+ according to document volume |
-| Network | Fixed IP or DNS name on the intranet; inbound TCP **8088** (ELM) and **8080** (editor) open | |
+| CPU | 4 cores, 64-bit (x86_64), virtualization enabled in BIOS/UEFI (for Docker) | 8 cores |
+| RAM | 8 GB (OnlyOffice alone needs 2–4 GB) | 16 GB |
+| Disk | 30 GB free on SSD (software ~6 GB + data) | 200 GB+, sized to document and evidence volume |
+| Network | fixed IP or DNS name on the intranet | |
 
-> **Windows Server note:** Docker Desktop is officially supported on Windows 10/11 only. On Windows Server 2019/2022,
-> Linux containers need WSL2 + Docker Engine inside a Linux distro, or a Linux VM/host. Confirm with ADA IT before
-> choosing Windows Server. A Linux host (RHEL/Ubuntu + Docker Engine) is also a supported alternative.
->
-> **Licensing:** Docker Desktop needs a paid Docker subscription for organizations with more than 250 employees or more
-> than USD 10 M revenue. Check with ADA IT/procurement.
+### 1.2 Offline server — software (install these, in this order)
 
-## 2. Software to install on the offline server (only these)
+| # | Software | Version | Needed for | Installer in the package |
+|---|---|---|---|---|
+| 1 | Windows 10/11 Pro/Enterprise 64-bit 22H2+ (or Windows Server 2019/2022, or RHEL/Ubuntu x86_64) | — | OS | — |
+| 2 | Microsoft Visual C++ Redistributable 2015–2022 x64 | latest 14.x | Python packages (cryptography, Pillow) | `offline\installers\vc_redist.x64.exe` |
+| 3 | **Python** | **3.12.x, 64-bit** (must match `-PythonVersion` used for the package) | backend, worker | `offline\installers\python-3.12.x-amd64.exe` |
+| 4 | **Node.js** | **22 LTS, 64-bit** (20+ works) | frontend server | `offline\installers\node-v22.x.x-x64.msi` |
+| 5 | **MySQL / MariaDB** with `proflow_uat` | MariaDB 10.4+ (XAMPP 7.4.10) or MySQL 8.0+ | database | already installed (XAMPP) |
+| 6 | **Docker Desktop** (+ WSL 2) on Windows, or Docker Engine 24+ on Linux | the version ADA IT approves | **OnlyOffice only** | `offline\installers\` if you add it |
+| 7 | **OnlyOffice Document Server** | 8.2.2 (image) | editing Word/Excel/PowerPoint | `offline\images\onlyoffice-documentserver-8.2.2.tar` or the one already running |
+| 8 | **GitLab** | the running intranet instance | source control | already running |
+| 9 | Git client (developers' PCs) | 2.4x | commit and push to GitLab | `offline\installers\Git-2.x-64-bit.exe` if you add it |
+| 10 | draw.io (optional) | jgraph/drawio 24.7.17 or the static webapp | embedded diagram editor | `offline\images\drawio-24.7.17.tar` (optional) |
+| 11 | Browser on users' PCs | Edge / Chrome current | UI | — |
 
-| # | Tool | Version | Where to get it (download on the connected PC) |
-|---|---|---|---|
-| 1 | Windows features **Virtual Machine Platform** + **Windows Subsystem for Linux** | built into Windows | enabled with DISM (step 4.1), no download |
-| 2 | **WSL** package | 2.3.x or later (`wsl.2.x.x.0.x64.msi`) | https://github.com/microsoft/WSL/releases |
-| 3 | **Docker Desktop for Windows** | **the same version as on your build PC** (4.37 or later; check with `docker version`). Includes Docker Engine 27+ and Compose v2 | https://docs.docker.com/desktop/release-notes/ → "Docker Desktop Installer.exe" |
-| 4 | A browser | Microsoft Edge / Chrome (already on Windows) | — |
+> Docker Desktop requires a paid subscription for organisations above 250 employees or USD 10 M revenue; on Windows
+> Server use Docker Engine inside WSL 2 or a Linux host. Check with ADA IT. Docker is needed only for OnlyOffice.
 
-Container images inside the package (fixed versions, nothing to download):
+### 1.3 Network ports on the server
 
-| Image | Version |
-|---|---|
-| `ada-elm/backend` | 0.1.0 (Python 3.12, FastAPI 0.115.6) |
-| `ada-elm/web` | 0.1.0 (nginx 1.27, React 18 + Mantine 7.15) |
-| `postgres` | 16.6-alpine |
-| `onlyoffice/documentserver` | 8.2.2 |
+| Port | Opened to | Purpose |
+|---|---|---|
+| 8088 | users | ELM web UI (`ELM_WEB_PORT`) |
+| 8080 | users | OnlyOffice editor (browser loads it) |
+| 8000 | the server itself, the OnlyOffice and GitLab containers | ELM backend API (`ELM_API_PORT`) |
+| 3309 / 3306 | the server itself | MySQL/MariaDB (do not expose further) |
+| 8929 (example) | users, server | GitLab |
+| 8081 | users (optional) | draw.io |
 
-## 3. On the CONNECTED PC: build the package
+### 1.4 Connected preparation PC
 
-1. Put `Docker Desktop Installer.exe` and `wsl.*.x64.msi` into `deploy\offline\installers\`.
-2. In PowerShell, from `D:\Projects\products\ADA-ELM`:
+Same OS family and CPU as the server (Windows x64 for a Windows server). Installed: Python 3.12 (same minor version as
+the server), Node.js 22, PowerShell 5.1+, internet access, and Docker only if you include the OnlyOffice/draw.io images.
+
+## 2. Prepare the package (connected PC)
+
+1. Download the installers listed in `deploy\offline\installers\PUT-INSTALLERS-HERE.txt` into that folder.
+2. In PowerShell, from the repository folder:
    ```powershell
-   powershell -ExecutionPolicy Bypass -File deploy\offline\prepare-offline-bundle.ps1
+   powershell -ExecutionPolicy Bypass -File deploy\offline\prepare-offline-bundle.ps1 -PythonVersion 3.12
    ```
-   This builds the ELM images, pulls PostgreSQL and OnlyOffice, saves all four images, copies the scripts and writes `SHA256SUMS.txt`.
-   If the offline server **already runs OnlyOffice**, add `-SkipOnlyOffice` to leave out the OnlyOffice image (package about 2.5 GB smaller).
-   If it already has Docker Desktop and WSL, you don't need the installers.
-3. Result: **`dist\ADA-ELM-Offline-0.1.0\`** (about 4–5 GB):
+   Add `-IncludeOnlyOffice` if the server has no OnlyOffice yet, `-IncludeDrawio` for the diagram editor.
+   (Linux server: `deploy/offline/prepare-offline-bundle.sh 0.2.0 3.12` on a connected Linux PC.)
+3. Result: `dist\ADA-ELM-Offline-0.2.0\`:
    ```
-   ADA-ELM-Offline-0.1.0\
-     START-ADA-ELM.bat     STOP-ADA-ELM.bat   STATUS-ADA-ELM.bat   BACKUP-ADA-ELM.bat
-     elm.ps1               docker-compose.yml README-OFFLINE.md    SHA256SUMS.txt
-     images\  (4 .tar files + IMAGES.txt)
-     installers\  (Docker Desktop + WSL)
+   ADA-ELM-Offline-0.2.0\
+     backend\  frontend\ (with dist\ built)  deploy\  database\  Docs\  scripts\
+     .env.example   README-OFFLINE.md   SHA256SUMS.txt
+     offline\wheels\      all Python packages for Windows x64 / Python 3.12
+     offline\npm-cache\   all Node packages (installed with npm ci --offline)
+     offline\images\      optional OnlyOffice / draw.io images
+     offline\installers\  Python, Node.js, VC++ runtime, ...
    ```
-4. Copy **the whole folder** to approved transfer media, then to the server, for example to `D:\ADA-ELM\`. Use a path without spaces if possible.
+4. Copy the whole folder to removable media and scan it according to ADA's media-transfer procedure.
 
-## 4. On the OFFLINE server: one-time prerequisites
+## 3. What the package does not contain
 
-> **Already have Docker Desktop + WSL 2 (and maybe OnlyOffice) on the server? Skip 4.1–4.3.** Run only the check below.
-> If every line passes, go straight to step 5.
-> ```powershell
-> wsl --status                          # Default Version: 2
-> docker version                        # Client AND Server shown (Engine 24+, ideally 27+)
-> docker info --format "{{.OSType}}"    # linux
-> docker compose version                # v2.20 or newer
-> net localgroup docker-users           # your account is listed
-> ```
-> Also confirm that Docker Desktop → Settings → General → "Start Docker Desktop when you sign in" is ticked.
+No database contents, no `.env` secrets, no demo data files, no `node_modules` (rebuilt from the cache) and no virtual
+environment (rebuilt from the wheels). The ELM tables are created on the server.
 
-Run in **PowerShell as Administrator**:
+## 4. Install on the offline server
 
-### 4.1 Enable Windows features, then reboot
-```powershell
-dism.exe /online /enable-feature /featurename:Microsoft-Windows-Subsystem-Linux /all /norestart
-dism.exe /online /enable-feature /featurename:VirtualMachinePlatform /all /norestart
-Restart-Computer
-```
+1. Copy the folder to the server, for example `D:\ADA-ELM`. Optional integrity check:
+   ```powershell
+   Get-Content SHA256SUMS.txt | ForEach-Object { $h, $f = $_ -split '  ', 2; if ((Get-FileHash $f).Hash -ne $h) { "BAD: $f" } }
+   ```
+2. Install the prerequisites from `offline\installers\` (section 1.2): VC++ runtime, Python 3.12 (tick
+   *Add python.exe to PATH*), Node.js 22. Open a new PowerShell so PATH is refreshed. Check: `py -3.12 --version`,
+   `node --version`.
+3. OnlyOffice: if it is not running yet, `docker load -i offline\images\onlyoffice-documentserver-8.2.2.tar`, then set
+   `ELM_ONLYOFFICE_JWT_SECRET` in `.env` (step 4) and run
+   `docker compose --env-file .env -f deploy\onlyoffice\docker-compose.yml up -d`.
+4. Run the setup (first run creates `.env` and opens it):
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File deploy\windows\setup.ps1 -Offline
+   ```
+   In `.env` set at least:
+   * `ELM_ENVIRONMENT=prod`, `ELM_SEED_DEMO_DATA=false`, `ELM_ADMIN_PASSWORD=<strong password>`
+   * `ELM_DATABASE_URL=mysql+pymysql://elm:<pw>@127.0.0.1:3309/proflow_uat?charset=utf8mb4`
+     (create the `elm` account with `database\mysql\00_create_elm_user.sql`, or use an existing account)
+   * OnlyOffice: `ELM_ONLYOFFICE_PUBLIC_URL`, `ELM_ONLYOFFICE_INTERNAL_URL`, `ELM_ONLYOFFICE_JWT_SECRET`, `ELM_BACKEND_INTERNAL_URL`
+   * GitLab: `ELM_GITLAB_ENABLED`, `ELM_GITLAB_URL`, `ELM_GITLAB_PUBLIC_URL`, `ELM_GITLAB_TOKEN`, `ELM_GITLAB_WEBHOOK_SECRET`
+   * `VITE_DEMO_HINT=0`
+   Then run the same command again. It installs the Python packages from `offline\wheels` (`pip --no-index`), the Node
+   packages from `offline\npm-cache` (`npm ci --offline`), keeps the built `frontend\dist` and creates the `elm_*`
+   tables in `proflow_uat` (`python -m app.dbsetup`).
+   If the DBA prefers to run SQL by hand, use `database\mysql\01_elm_schema.sql` and `02_elm_reference_data.sql`
+   first and add `-SkipDatabase`.
+5. Start: `deploy\windows\start-all.bat`. Open `http://<server>:8088` and sign in as `admin`.
+6. Windows Firewall: allow inbound TCP 8088 and 8080 from users; 8000 from the Docker network.
+7. Autostart: Task Scheduler tasks "At startup" for `start-backend.bat`, `start-worker.bat`, `start-frontend.bat`
+   (in that order, with a 30-second delay after MySQL/Docker), or the service wrapper ADA IT approves.
 
-### 4.2 Install WSL and set version 2
-```powershell
-cd D:\ADA-ELM\ADA-ELM-Offline-0.1.0\installers
-msiexec /i (Get-ChildItem wsl*.msi).FullName /quiet /norestart
-wsl --set-default-version 2
-wsl --status
-```
+## 5. First configuration in ELM
 
-### 4.3 Install Docker Desktop (offline, silent)
-```powershell
-Start-Process ".\Docker Desktop Installer.exe" -Wait -ArgumentList "install","--quiet","--accept-license","--backend=wsl-2","--always-run-service"
-net localgroup docker-users "$env:USERNAME" /add
-```
-Sign out and back in (or reboot). Then start **Docker Desktop** once:
-- Accept the agreement and skip sign-in (no internet is needed).
-- Settings → General: tick **"Start Docker Desktop when you sign in"**.
-- Make sure it shows **Engine running** and is in **Linux containers** mode.
+1. Change the `admin` password (top-right menu).
+2. Administration → Organization, Users & access, Roles: create directorates, people and scoped roles.
+3. Administration → Projects & breakdown: create projects and their breakdown levels.
+4. Engineering → Source control: register the GitLab repositories, then add the webhook in GitLab (see `Docs/RUNNING.md` §8).
+5. Optional: import data from the legacy PMS (`scripts/import_legacy/README.md`).
 
-Check:
-```powershell
-docker version          # Client and Server both shown
-docker compose version  # v2.x
-```
+## 6. Backup and restore
 
-Optional, to cap the memory WSL uses: create `%UserProfile%\.wslconfig` containing
-`[wsl2]` and `memory=12GB` on separate lines, then run `wsl --shutdown`.
+* Backup: `powershell -ExecutionPolicy Bypass -File deploy\windows\backup.ps1 -MysqlBin C:\xampp7410\mysql\bin`
+  writes `backups\elm-db-<time>.sql` (only `elm_*` tables), `elm-files-<time>.zip` (`data\storage`, `data\pki`) and
+  checksums. Back up the PMS tables with the existing `proflow_uat` procedure. Keep `.env` in a secure place too.
+* Restore: stop ELM, `mysql -u <user> -p proflow_uat < elm-db-<time>.sql`, unzip the files archive into the ELM folder,
+  start ELM.
 
-## 5. Start ADA-ELM (one click)
+## 7. Upgrading to a new release
 
-Double-click **`START-ADA-ELM.bat`** and allow the Administrator prompt.
-
-On the **first run** it automatically:
-1. Checks Docker (and starts Docker Desktop if needed).
-2. Verifies every file against `SHA256SUMS.txt`.
-3. Loads the 4 images (about 3–5 minutes).
-4. Asks a few questions: **server name/IP** users will type (default: computer name), **web port** (8088) and **load demo data?** (N for real use).
-   - **If an OnlyOffice container is already running**, it is detected automatically and offered for reuse (answer **Y**). Its port and JWT secret are read from the container, and the bundled OnlyOffice is not loaded or started. It also checks that the container allows private IPs. If not, it prints the fix: re-create the container with `-e ALLOW_PRIVATE_IP_ADDRESS=true`, or editing and saving fails with "Download failed".
-   - Otherwise it starts the bundled OnlyOffice 8.2.2 on port 8080 (8081 if 8080 is already taken).
-5. Generates all secrets into `.env`: database password, session key, OnlyOffice JWT and admin password. **No manual JWT setup is needed**, because ELM and OnlyOffice are configured with the same generated secret.
-6. Creates the Windows firewall rule for both ports.
-7. Starts all containers, waits for ELM and OnlyOffice to become healthy (OnlyOffice takes 2–3 minutes the first time) and opens the browser.
-
-The sign-in details are written to **`ADMIN-CREDENTIALS.txt`**: user `admin` with a generated password, or the demo users if you chose demo data. Change the password, then delete that file.
-
-Users on other PCs open: **`http://<server-name>:8088`**
-
-Later runs of `START-ADA-ELM.bat` keep the existing `.env` and data, and just start the containers.
-After a reboot, containers start automatically once Docker Desktop is running. Docker Desktop starts when a user signs in, so keep the server's service account signed in, or configure auto-logon per ADA policy.
-
-## 6. Daily operation
-
-| Task | Do this |
-|---|---|
-| Stop (data kept) | `STOP-ADA-ELM.bat` |
-| Status + recent logs | `STATUS-ADA-ELM.bat` |
-| Backup (DB + documents + signing keys + .env) | `BACKUP-ADA-ELM.bat` → `backups\<timestamp>\`. Copy it to separate media. |
-| Full logs | `docker compose logs -f backend` (run in the package folder) |
-
-**Restore** (PowerShell in the package folder, with ELM stopped except the db container):
-```powershell
-docker compose up -d db
-docker compose cp backups\<ts>\elm-db.dump db:/tmp/elm.dump
-docker compose exec db pg_restore -U elm -d elm --clean --if-exists /tmp/elm.dump
-docker run --rm -v ada-elm_elm-files:/data -v ${PWD}\backups\<ts>:/backup postgres:16.6-alpine sh -c "cd /data && tar xzf /backup/elm-files.tgz"
-START-ADA-ELM.bat
-```
-
-## 7. Upgrading to a new version
-On the connected PC, rebuild the package with the new version (`-Version 0.2.0`). On the server: run `BACKUP-ADA-ELM.bat`, then `STOP-ADA-ELM.bat`. Copy the new folder, copy the old `.env` into it, and run `START-ADA-ELM.bat`. Database migrations run automatically.
+1. Prepare a new package on the connected PC (section 2).
+2. On the server: stop ELM, take a backup, copy the new folder over the old one **keeping `.env`, `data\` and
+   `backups\`**.
+3. `powershell -ExecutionPolicy Bypass -File deploy\windows\setup.ps1 -Offline -RebuildFrontend` (re-installs packages
+   and applies new migrations; existing rows are kept), then start ELM.
 
 ## 8. Troubleshooting
 
-| Symptom | Fix |
+See `Docs/RUNNING.md` §10. Typical offline-specific issues:
+
+| Symptom | Cause / fix |
 |---|---|
-| "Docker is not installed" / "engine did not start" | Re-check step 4. Virtualization must be enabled in BIOS. Check `wsl --status`. |
-| "Windows-containers mode" | Docker tray icon → *Switch to Linux containers* |
-| "Port 8088 is already used" | Edit `ELM_HTTP_PORT` in `.env` (or `ELM_ONLYOFFICE_PORT`), then run START again |
-| Editor shows "Download failed" | Usually the server name in `.env` (`ELM_SERVER_HOST`) can't be resolved from client PCs. Use the IP address, then run STOP and START. |
-| Other PCs can't open the site | Firewall: run START as Administrator once, or allow inbound TCP 8088 and 8080 |
-| Anything else | `STATUS-ADA-ELM.bat`, plus `elm-install.log` in the package folder |
+| `pip` says "No matching distribution" | package prepared for another Python minor version or OS; rebuild with the right `-PythonVersion` |
+| `npm ci --offline` fails with ENOTCACHED | `package-lock.json` changed after the cache was filled; rebuild the package |
+| `ImportError: DLL load failed` | install the VC++ 2015–2022 x64 runtime |
+| OnlyOffice image not found | `docker load -i offline\images\onlyoffice-documentserver-8.2.2.tar` |

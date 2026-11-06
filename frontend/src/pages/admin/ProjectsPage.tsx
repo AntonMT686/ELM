@@ -13,7 +13,7 @@ export default function ProjectsPage() {
   const [open, m] = useDisclosure(false)
   return (
     <div className="page">
-      <PageTitle icon={<IconAffiliate size={22} />} title="Projects & product breakdown" sub="Each programme defines its own breakdown levels — e.g. Aircraft → System → Subsystem → LRU, or Aircraft → LRU → ECFM."
+      <PageTitle icon={<IconAffiliate size={22} />} title="Projects & product breakdown" sub="Each programme defines its own breakdown levels — e.g. Product → System → Subsystem → Unit, or Product → Unit → Component."
         extra={<Button leftSection={<IconPlus size={16} />} onClick={m.open}>New project</Button>} />
       <SimpleGrid cols={{ base: 1, md: 2, xl: 3 }}>
         {data.map((p) => (
@@ -34,7 +34,7 @@ export default function ProjectsPage() {
 function NewProject({ opened, onClose }: { opened: boolean; onClose: () => void }) {
   const orgs = useOrgUnits()
   const [f, setF] = useState<any>({ code: '', name: '', programme: '', description: '', color: '#2563eb', lead_org_unit_id: null, contributing_org_ids: [] })
-  const [levels, setLevels] = useState([{ code: 'AIRCRAFT', name: 'Aircraft' }, { code: 'SYSTEM', name: 'System' }, { code: 'SUBSYSTEM', name: 'Subsystem' }, { code: 'LRU', name: 'LRU' }])
+  const [levels, setLevels] = useState([{ code: 'PRODUCT', name: 'Product' }, { code: 'SYSTEM', name: 'System' }, { code: 'SUBSYSTEM', name: 'Subsystem' }, { code: 'UNIT', name: 'Unit' }])
   const act = useAction(() => api.post('/projects', { ...f, levels }), { success: 'Project created', invalidate: [['projects'], ['me']], onDone: onClose })
   const set = (k: string) => (v: any) => setF({ ...f, [k]: v })
   const orgData = (orgs.data || []).map((o) => ({ value: o.id, label: `${o.code} — ${o.name}` }))

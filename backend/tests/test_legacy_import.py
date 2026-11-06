@@ -18,7 +18,7 @@ BUNDLE = {
     "inventory": {"requirement_notes": 3, "project": 2},
     "missing_tables": [],
     "data": {
-        "department": [{"id": 1, "name": "Avionics Dept", "enabled": 1}],
+        "department": [{"id": 1, "name": "Electronics Dept", "enabled": 1}],
         "user": [
             {"id": 1, "first_name": "Sys", "last_name": "Admin", "username": "ADMIN", "email": "a@example.test", "designation": None, "department_id": 1, "user_level": 1, "status": 1, "employment_status": 1, "lastLogin": None, "dateCreated": "2026-01-01 10:00:00"},
             {"id": 2, "first_name": "Test", "last_name": "Editor", "username": "tc.editor", "email": "t@example.test", "designation": "Tester", "department_id": 1, "user_level": 8, "status": 1, "employment_status": 1, "lastLogin": None, "dateCreated": None},

@@ -344,7 +344,7 @@ def impact(db: Session, r: Requirement, p: Principal) -> dict:
 
 
 def rtm(db: Session, project_id: uuid.UUID) -> dict:
-    """Requirement Traceability Matrix. Design, test and defect columns join when those modules exist."""
+    """Requirement Traceability Matrix: tasks, documents, designs (§11), code / merge requests (§12), tests and defects (§13)."""
     reqs = sorted(db.execute(select(Requirement).where(Requirement.project_id == project_id)).scalars().all(), key=lambda r: (r.sort_order, natural_key(r.key)))
     ids = [r.id for r in reqs]
     tasks: dict = defaultdict(list)
@@ -364,8 +364,62 @@ def rtm(db: Session, project_id: uuid.UUID) -> dict:
                 downs[link.to_id].append({"key": keys[link.from_id], "type": link.link_type})
         for rid, seq in db.execute(select(RequirementBaselineItem.requirement_id, RequirementBaseline.seq).join(RequirementBaseline, RequirementBaseline.id == RequirementBaselineItem.baseline_id).where(RequirementBaselineItem.requirement_id.in_(ids))).all():
             in_base[rid].append(seq)
-    rows = [{"id": str(r.id), "key": r.key, "title": r.title, "status": r.status, "revision": r.revision, "priority": r.priority, "req_type": r.req_type, "tasks": tasks[r.id], "documents": docs[r.id], "traces_to": ups[r.id], "traced_by": downs[r.id], "baselines": sorted(in_base[r.id])} for r in reqs]
+    designs, tests, defects, code = _rtm_engineering(db, ids, [t["id"] for v in tasks.values() for t in v])
+    rows = [{"id": str(r.id), "key": r.key, "title": r.title, "status": r.status, "revision": r.revision, "priority": r.priority, "req_type": r.req_type, "tasks": tasks[r.id], "documents": docs[r.id],
+             "traces_to": ups[r.id], "traced_by": downs[r.id], "baselines": sorted(in_base[r.id]), "designs": designs.get(r.id, []), "tests": tests.get(r.id, []), "defects": defects.get(r.id, []),
+             "code": [c for t in tasks[r.id] for c in code.get(t["id"], [])]} for r in reqs]
     total = len(rows)
     with_tasks = sum(1 for x in rows if x["tasks"])
     with_docs = sum(1 for x in rows if x["documents"])
-    return {"rows": rows, "summary": {"total": total, "with_tasks": with_tasks, "with_documents": with_docs, "untraced": sum(1 for x in rows if not x["tasks"] and not x["documents"] and not x["traces_to"] and not x["traced_by"]), "baselined": sum(1 for x in rows if x["baselines"])}, "not_yet_available": ["design artefacts (§11)", "development records (§12)", "test cases and defects (§13)"]}
+    verified = sum(1 for x in rows if x["tests"] and all(t["last_result"] == "PASSED" for t in x["tests"]))
+    return {"rows": rows, "summary": {"total": total, "with_tasks": with_tasks, "with_documents": with_docs, "with_designs": sum(1 for x in rows if x["designs"]), "with_tests": sum(1 for x in rows if x["tests"]),
+                                      "verified": verified, "open_defects": sum(1 for x in rows if any(d["status"] in ("OPEN", "IN_PROGRESS", "FIXED") for d in x["defects"])),
+                                      "untraced": sum(1 for x in rows if not x["tasks"] and not x["documents"] and not x["traces_to"] and not x["traced_by"] and not x["designs"] and not x["tests"]), "baselined": sum(1 for x in rows if x["baselines"])}}
+
+
+def _rtm_engineering(db: Session, req_ids: list, task_ids: list):
+    """Design (§11), test and defect (§13) and code (§12) columns of the RTM, from the shared artefact links."""
+    from app.models.artifacts import ArtifactLink
+    from app.models.design import DesignRecord
+    from app.models.scm import ScmLink
+    from app.models.testing import Defect, TestCase
+    from app.services.testing import last_results_for_cases
+
+    designs: dict = defaultdict(list)
+    tests: dict = defaultdict(list)
+    defects: dict = defaultdict(list)
+    code: dict = defaultdict(list)
+    if not req_ids:
+        return designs, tests, defects, code
+    links = db.execute(select(ArtifactLink).where(ArtifactLink.to_type == "REQUIREMENT", ArtifactLink.to_id.in_(req_ids))).scalars().all()
+    d_ids = {x.from_id for x in links if x.from_type == "DESIGN"}
+    c_ids = {x.from_id for x in links if x.from_type == "TEST_CASE"}
+    f_ids = {x.from_id for x in links if x.from_type == "DEFECT"}
+    dmap = {d.id: d for d in db.execute(select(DesignRecord).where(DesignRecord.id.in_(d_ids))).scalars()} if d_ids else {}
+    cmap = {c.id: c for c in db.execute(select(TestCase).where(TestCase.id.in_(c_ids))).scalars()} if c_ids else {}
+    last = last_results_for_cases(db, list(cmap))
+    found = db.execute(select(ArtifactLink.from_id, ArtifactLink.to_id).where(ArtifactLink.from_type == "DEFECT", ArtifactLink.to_type == "TEST_CASE", ArtifactLink.to_id.in_(list(cmap) or [uuid.uuid4()]))).all()
+    by_case: dict = defaultdict(set)
+    for def_id, case_id in found:
+        by_case[case_id].add(def_id)
+        f_ids.add(def_id)
+    fmap = {f.id: f for f in db.execute(select(Defect).where(Defect.id.in_(f_ids))).scalars()} if f_ids else {}
+    for x in links:
+        if x.from_type == "DESIGN" and x.from_id in dmap:
+            d = dmap[x.from_id]
+            designs[x.to_id].append({"id": str(d.id), "key": d.key, "status": d.status, "link_type": x.link_type, "section": x.section})
+        elif x.from_type == "TEST_CASE" and x.from_id in cmap:
+            c = cmap[x.from_id]
+            tests[x.to_id].append({"id": str(c.id), "key": c.key, "status": c.status, "last_result": (last.get(c.id) or {}).get("result")})
+            for def_id in by_case.get(c.id, ()):
+                f = fmap[def_id]
+                if not any(e["id"] == str(f.id) for e in defects[x.to_id]):
+                    defects[x.to_id].append({"id": str(f.id), "key": f.key, "status": f.status, "severity": f.severity})
+        elif x.from_type == "DEFECT" and x.from_id in fmap:
+            f = fmap[x.from_id]
+            if not any(e["id"] == str(f.id) for e in defects[x.to_id]):
+                defects[x.to_id].append({"id": str(f.id), "key": f.key, "status": f.status, "severity": f.severity})
+    if task_ids:
+        for link in db.execute(select(ScmLink).where(ScmLink.work_item_id.in_([uuid.UUID(t) for t in task_ids]), ScmLink.kind == "MERGE_REQUEST")).scalars():
+            code[str(link.work_item_id)].append({"ref": f"!{link.ref}", "state": link.state, "url": link.url})
+    return designs, tests, defects, code

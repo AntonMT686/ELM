@@ -18,7 +18,7 @@ def test_login_and_me(client_factory):
     me = c.get("/api/v1/auth/me").json()
     assert me["user"]["username"] == "pe.kumar"
     assert "doc.create" in me["permissions"]
-    assert any(p["code"] == "AMCA" for p in me["projects"])
+    assert any(p["code"] == "ALPHA" for p in me["projects"])
 
 
 def test_csrf_required(client_factory):
@@ -31,23 +31,23 @@ def test_csrf_required(client_factory):
 def test_seeded_release_and_signatures(client_factory):
     c = client_factory("cm.sharma")
     reg = c.get("/api/v1/release-register").json()
-    assert reg["total"] >= 2  # FCC spec + auto-released office order
-    fcc = _doc_by_title(c, "Digital Flight Control Computer")
-    d = c.get(f"/api/v1/documents/{fcc['id']}").json()
+    assert reg["total"] >= 2  # CPU spec + auto-released office order
+    cpu = _doc_by_title(c, "Central Processing Unit — Equipment")
+    d = c.get(f"/api/v1/documents/{cpu['id']}").json()
     assert d["status"] == "RELEASED"
     assert len(d["signatures"]) == 4
-    v = c.get(f"/api/v1/documents/{fcc['id']}/signatures/{d['signatures'][0]['id']}/verify").json()
+    v = c.get(f"/api/v1/documents/{cpu['id']}/signatures/{d['signatures'][0]['id']}/verify").json()
     assert v["valid"] is True
 
 
 def test_scope_isolation(client_factory):
     adm = client_factory("adm.babu")
     titles = [x["title"] for x in adm.get("/api/v1/documents", params={"page_size": 100}).json()["items"]]
-    assert titles and not any("Flight Control" in t for t in titles)
+    assert titles and not any("Processing Unit" in t for t in titles)
     eng = client_factory("pe.kumar")
-    fcc = _doc_by_title(eng, "Digital Flight Control Computer")
-    assert adm.get(f"/api/v1/documents/{fcc['id']}").status_code == 403
-    assert adm.get(f"/api/v1/documents/{fcc['id']}/revisions/{fcc['current_revision']['id']}/file").status_code == 403
+    cpu = _doc_by_title(eng, "Central Processing Unit — Equipment")
+    assert adm.get(f"/api/v1/documents/{cpu['id']}").status_code == 403
+    assert adm.get(f"/api/v1/documents/{cpu['id']}/revisions/{cpu['current_revision']['id']}/file").status_code == 403
 
 
 def test_full_document_lifecycle(client_factory):
@@ -55,12 +55,12 @@ def test_full_document_lifecycle(client_factory):
     me = priya.get("/api/v1/auth/me").json()
     types = {t["code"]: t for t in priya.get("/api/v1/document-types").json()}
     tree = priya.get(f"/api/v1/projects/{me['projects'][0]['id']}/tree").json()
-    fcc = next(i for i in tree["items"] if i["code"] == "FCS-FCC")
-    meta = {"type_id": types["DDD"]["id"], "title": "FCC Software Design Description (test)", "item_id": fcc["id"], "from_template": True}
+    cpu = next(i for i in tree["items"] if i["code"] == "CTL-CPU")
+    meta = {"type_id": types["DDD"]["id"], "title": "CPU Software Design Description (test)", "item_id": cpu["id"], "from_template": True}
     r = priya.post("/api/v1/documents", data={"meta": json.dumps(meta)})
     assert r.status_code == 200, r.text
     doc = r.json()
-    assert doc["number"].startswith("AMCA-FCS-FCC-DDD-")
+    assert doc["number"].startswith("ALPHA-CTL-CPU-DDD-")
     assert doc["current_revision"]["iteration"] == 1
 
     plan = priya.get(f"/api/v1/documents/{doc['id']}/workflow-plan").json()
@@ -138,8 +138,8 @@ def test_dashboard_and_tree(client_factory):
     assert d["kpis"]["total_docs"] > 5 and d["projects"]
     me = c.get("/api/v1/auth/me").json()
     assert me["perspective"] == "OVERSIGHT"
-    amca = next(p for p in me["projects"] if p["code"] == "AMCA")
-    tree = c.get(f"/api/v1/projects/{amca['id']}/tree").json()
+    alpha = next(p for p in me["projects"] if p["code"] == "ALPHA")
+    tree = c.get(f"/api/v1/projects/{alpha['id']}/tree").json()
     root = next(i for i in tree["items"] if i["parent_id"] is None)
     assert root["rollup"]["total"] >= 8
 

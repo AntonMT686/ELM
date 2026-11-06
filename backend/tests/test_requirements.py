@@ -12,8 +12,8 @@ def pe(client_factory):
     return client_factory("pe.kumar")
 
 
-def _amca(c):
-    return next(p for p in c.get(f"{API}/projects").json() if p["code"] == "AMCA")["id"]
+def _alpha(c):
+    return next(p for p in c.get(f"{API}/projects").json() if p["code"] == "ALPHA")["id"]
 
 
 def _source(c, project, name="Test SRS", prefix="TST"):
@@ -59,18 +59,18 @@ def _approved(pe, client_factory, project, **kw):
 
 
 def test_ids_use_the_configured_prefix_and_seeded_data_exists(pe):
-    project = _amca(pe)
+    project = _alpha(pe)
     src = pe.post(f"{API}/projects/{project}/requirement-sources", json={"name": "Prefix check", "key_prefix": "PFX"}).json()["id"]
     a = pe.post(f"{API}/projects/{project}/requirements", json={"title": "First requirement", "source_id": src}).json()
     b = pe.post(f"{API}/projects/{project}/requirements", json={"title": "Second requirement", "source_id": src}).json()
     assert a["key"] == "PFX-0001" and b["key"] == "PFX-0002"
     assert a["status"] == "DRAFT" and a["revision"] == 1 and len(a["content_sha256"]) == 64
-    listing = pe.get(f"{API}/projects/{project}/requirements", params={"q": "triplex"}).json()["items"]
+    listing = pe.get(f"{API}/projects/{project}/requirements", params={"q": "triple redundant"}).json()["items"]
     assert listing[0]["status"] == "BASELINED"
 
 
 def test_lifecycle_rejects_illegal_moves_and_requires_fields_and_reason(pe):
-    project = _amca(pe)
+    project = _alpha(pe)
     r = pe.post(f"{API}/projects/{project}/requirements", json={"title": "Thin requirement"}).json()
     assert _go(pe, r["id"], "APPROVED").json()["error"]["code"] == "INVALID_TRANSITION"
     assert _go(pe, r["id"], "BASELINED").json()["error"]["code"] == "INVALID_TRANSITION"
@@ -86,7 +86,7 @@ def test_lifecycle_rejects_illegal_moves_and_requires_fields_and_reason(pe):
 
 
 def test_review_is_sequential_bound_to_hash_and_keeps_separation_of_duties(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     joshi = client_factory("rev.joshi")
     td = client_factory("td.menon")
     r = _new(pe, project)
@@ -112,7 +112,7 @@ def test_review_is_sequential_bound_to_hash_and_keeps_separation_of_duties(pe, c
 
 def test_rejection_goes_to_rework_and_old_approval_is_not_reused(pe, client_factory):
     """Scenario D: rejected decisions are kept, and a new cycle needs fresh decisions."""
-    project = _amca(pe)
+    project = _alpha(pe)
     joshi = client_factory("rev.joshi")
     td = client_factory("td.menon")
     r = _new(pe, project)
@@ -128,7 +128,7 @@ def test_rejection_goes_to_rework_and_old_approval_is_not_reused(pe, client_fact
 
 
 def test_withdraw_cancels_pending_reviews(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     r = _new(pe, project)
     _submit(pe, r["id"], approvers=[_uid(pe, "td.menon")])
     assert _go(pe, r["id"], "UNDER_ANALYSIS").json()["error"]["code"] == "REASON_REQUIRED"
@@ -138,7 +138,7 @@ def test_withdraw_cancels_pending_reviews(pe, client_factory):
 
 
 def test_baseline_is_immutable_and_change_opens_a_new_revision(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     r = _approved(pe, client_factory, project, title="Baseline me please")
     draft = _new(pe, project, title="Still a draft")
     res = pe.post(f"{API}/projects/{project}/requirement-baselines", json={"label": "Mixed", "reason": "Should fail", "requirement_ids": [r["id"], draft["id"]]})
@@ -164,13 +164,13 @@ def test_baseline_is_immutable_and_change_opens_a_new_revision(pe, client_factor
 
 
 def test_baseline_needs_permission(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     priya = client_factory("eng.priya")
     assert priya.post(f"{API}/projects/{project}/requirement-baselines", json={"label": "Nope", "reason": "Not allowed"}).status_code == 403
 
 
 def test_links_impact_and_loops(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     a = _new(pe, project, title="Top requirement")
     b = _new(pe, project, title="Depends on the top one")
     c = _new(pe, project, title="Child of the second", parent_id=b["id"])
@@ -193,17 +193,21 @@ def test_links_impact_and_loops(pe, client_factory):
 
 
 def test_rtm_reports_real_coverage_and_csv_is_formula_safe(pe):
-    project = _amca(pe)
+    project = _alpha(pe)
     r = _new(pe, project, title="=CMD() traced requirement")
     data = pe.get(f"{API}/projects/{project}/rtm").json()
-    assert data["summary"]["total"] >= 5 and data["summary"]["with_tasks"] >= 1 and data["not_yet_available"]
+    assert data["summary"]["total"] >= 5 and data["summary"]["with_tasks"] >= 1
+    alpha1 = next(r for r in data["rows"] if r["key"] == "ALPHA-CPU-0001")
+    assert alpha1["designs"] and alpha1["tests"] and alpha1["tests"][0]["last_result"] == "PASSED", "design and test columns are filled (§11, §13)"
+    alpha2 = next(r for r in data["rows"] if r["key"] == "ALPHA-CPU-0002")
+    assert alpha2["defects"] and alpha2["defects"][0]["key"] == "ALPHA-DEF-0001"
     assert next(x for x in data["rows"] if x["key"] == r["key"])["tasks"] == []
     text = pe.get(f"{API}/projects/{project}/rtm.csv").text
     assert "'=CMD() traced requirement" in text
 
 
 def test_scope_isolation(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     adm = client_factory("adm.babu")
     r = _new(pe, project)
     assert adm.get(f"{API}/projects/{project}/requirements").status_code == 403
@@ -218,7 +222,7 @@ def test_scope_isolation(pe, client_factory):
 
 
 def test_assigned_reviewer_outside_the_project_can_read_and_decide(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     adm = client_factory("adm.head")
     r = _new(pe, project)
     _submit(pe, r["id"], approvers=[_uid(pe, "adm.head")])
@@ -227,7 +231,7 @@ def test_assigned_reviewer_outside_the_project_can_read_and_decide(pe, client_fa
 
 
 def test_csv_import_previews_and_never_overwrites_approved(pe, client_factory):
-    project = _amca(pe)
+    project = _alpha(pe)
     src = pe.post(f"{API}/projects/{project}/requirement-sources", json={"name": "DOORS export", "source_system": "DOORS", "key_prefix": "DRS"}).json()["id"]
 
     def send(text, dry=True):
@@ -273,7 +277,7 @@ def test_lifecycle_config_is_validated(client_factory):
 
 
 def test_task_shows_its_requirements(pe):
-    project = _amca(pe)
+    project = _alpha(pe)
     r = _new(pe, project, title="Shown on the task")
     t = pe.post(f"{API}/work-items", json={"title": "Task with a requirement", "project_id": project}).json()
     pe.post(f"{API}/requirements/{r['id']}/tasks", json={"work_item_id": t["id"]})

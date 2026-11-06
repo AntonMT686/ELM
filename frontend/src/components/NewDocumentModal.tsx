@@ -82,7 +82,7 @@ export default function NewDocumentModal({ opened, onClose, projectId, itemId, p
         <Stack>
           <Select label="Project / programme" value={project} onChange={(v) => { setProject(v); setItem(null) }} clearable={type.category !== 'ENGINEERING'}
             data={(me?.projects || []).map((p) => ({ value: p.id, label: `${p.code} — ${p.name}` }))} placeholder={type.category === 'NON_ENGINEERING' ? 'Optional for administrative documents' : 'Select project'} />
-          <Select label="Configuration item (Aircraft / System / Subsystem / LRU …)" searchable clearable value={item} onChange={setItem} disabled={!project}
+          <Select label="Configuration item (Product / System / Subsystem / Unit …)" searchable clearable value={item} onChange={setItem} disabled={!project}
             data={(tree.data?.items || []).map((i) => ({ value: i.id, label: `${indent(i)}${i.code} — ${i.name}  [${i.level.name}]`, disabled: !!type.applicable_levels && !type.applicable_levels.split(',').includes(i.level.code) }))}
             description={type.applicable_levels ? `Applicable at: ${type.applicable_levels.replace(/,/g, ', ')}` : 'Optional — leave empty for project-level documents'} />
           {selItem && <Group gap={6}><LevelTag level={selItem.level.code} color={selItem.level.color} /><Text size="sm">{selItem.name}</Text>{selItem.lead_org && <Badge color="gray">Lead: {selItem.lead_org.code}</Badge>}</Group>}

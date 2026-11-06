@@ -52,10 +52,10 @@ export default function LoginPage() {
           <div><div style={{ fontWeight: 700, fontSize: 18 }}>ADA · ELM</div><div style={{ opacity: 0.6, fontSize: 13 }}>Aeronautical Development Agency</div></div>
         </div>
         <div style={{ position: 'relative', maxWidth: 520 }}>
-          <h1 style={{ fontSize: 40, lineHeight: 1.1, margin: 0, fontWeight: 700, letterSpacing: '-.02em' }}>One controlled thread from <span style={{ color: '#7dd3fc' }}>Aircraft</span> to every <span style={{ color: '#7dd3fc' }}>LRU</span>.</h1>
+          <h1 style={{ fontSize: 40, lineHeight: 1.1, margin: 0, fontWeight: 700, letterSpacing: '-.02em' }}>One controlled thread from <span style={{ color: '#7dd3fc' }}>Product</span> to every <span style={{ color: '#7dd3fc' }}>Unit</span>.</h1>
           <p style={{ opacity: 0.75, fontSize: 16, marginTop: 16 }}>Author, review, approve, sign and release engineering documents with complete traceability across directorates.</p>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 24 }}>
-            <span className="chip"><IconBinaryTree2 size={15} /> Aircraft → System → LRU</span>
+            <span className="chip"><IconBinaryTree2 size={15} /> Product → System → Unit</span>
             <span className="chip"><IconRosetteDiscountCheck size={15} /> Digital signatures</span>
             <span className="chip"><IconCertificate size={15} /> Central release register</span>
           </div>

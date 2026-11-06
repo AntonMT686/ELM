@@ -15,9 +15,12 @@ export default function TasksPage() {
   const qc = useQueryClient()
   const [scope, setScope] = useState('mine')
   const [project, setProject] = useState<string | null>(sp.get('project'))
+  // Development tasks follow their own lifecycle (code review, merged, testing), so they get their own board.
+  const [board, setBoard] = useState<string>(sp.get('board') === 'dev' ? 'dev' : 'work')
   const projects = useProjects()
-  const { data = [] } = useQuery<any[]>({ queryKey: ['work-items', scope, project], queryFn: () => api.get('/work-items', { mine: scope === 'mine' && !project, project_id: project }) })
-  const life = useQuery<any>({ queryKey: ['task-lifecycle', project], queryFn: () => api.get('/task-lifecycle', { project_id: project }), staleTime: 300_000 })
+  const all = useQuery<any[]>({ queryKey: ['work-items', scope, project], queryFn: () => api.get('/work-items', { mine: scope === 'mine' && !project, project_id: project }) })
+  const data = useMemo(() => (all.data || []).filter((w) => (board === 'dev') === (w.kind === 'DEVELOPMENT')), [all.data, board])
+  const life = useQuery<any>({ queryKey: ['task-lifecycle', project, board], queryFn: () => api.get('/task-lifecycle', { project_id: project, kind: board === 'dev' ? 'DEVELOPMENT' : undefined }), staleTime: 300_000 })
   const [over, setOver] = useState<string | null>(null)
   const [target, setTarget] = useState<TaskTarget | null>(null)
   const [reasonFor, setReasonFor] = useState<{ task: any; rule: any } | null>(null)
@@ -57,8 +60,9 @@ export default function TasksPage() {
       <PageTitle icon={<IconLayoutKanban size={22} />} title="Tasks board" sub="Drag a card to change its status. Only allowed moves go through, and completion gates are checked on the server."
         extra={<>
           <Select placeholder="All projects" clearable searchable w={170} value={project} onChange={setProject} data={(projects.data || []).map((p) => ({ value: p.id, label: p.code }))} />
+          <SegmentedControl value={board} onChange={setBoard} data={[{ label: 'Work tasks', value: 'work' }, { label: 'Development', value: 'dev' }]} />
           {!project && <SegmentedControl value={scope} onChange={setScope} data={[{ label: 'Mine', value: 'mine' }, { label: 'My scope', value: 'scope' }]} />}
-          <Button leftSection={<IconPlus size={16} />} onClick={() => setTarget({ defaults: project ? { project_id: project } : {} })}>New task</Button>
+          <Button leftSection={<IconPlus size={16} />} onClick={() => setTarget({ defaults: { ...(project ? { project_id: project } : {}), ...(board === 'dev' ? { kind: 'DEVELOPMENT' } : {}) } })}>New task</Button>
         </>} />
       <div className="kanban" style={{ gridTemplateColumns: `repeat(${columns.length || 1}, minmax(250px, 1fr))` }}>
         {columns.map((c) => {

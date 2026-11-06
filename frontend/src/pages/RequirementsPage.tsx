@@ -349,10 +349,14 @@ function Rtm({ projectId, lifecycle, onOpen }: { projectId: string; lifecycle?: 
   if (!d) return null
   const s = d.summary
   const pct = (n: number) => (s.total ? `${Math.round((n / s.total) * 100)}% of ${s.total}` : undefined)
-  const rows = gapsOnly ? d.rows.filter((r: any) => !r.tasks.length && !r.documents.length && !r.traces_to.length && !r.traced_by.length) : d.rows
+  const rows = gapsOnly ? d.rows.filter((r: any) => !r.tasks.length && !r.documents.length && !r.traces_to.length && !r.traced_by.length && !r.designs.length && !r.tests.length) : d.rows
+  const RESULT_COLOR: Record<string, string> = { PASSED: 'teal', FAILED: 'red', BLOCKED: 'orange', SKIPPED: 'gray' }
   return (
     <Stack>
       <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <Kpi label="Designed" value={s.with_designs} icon={<IconLink size={20} />} color="indigo" hint={pct(s.with_designs)} />
+        <Kpi label="With test cases" value={s.with_tests} icon={<IconListCheck size={20} />} color="cyan" hint={pct(s.with_tests)} />
+        <Kpi label="Verified (all tests passed)" value={s.verified} icon={<IconLock size={20} />} color="teal" hint={pct(s.verified)} />
         <Kpi label="Linked to tasks" value={s.with_tasks} icon={<IconListCheck size={20} />} color="blue" hint={pct(s.with_tasks)} />
         <Kpi label="Linked to documents" value={s.with_documents} icon={<IconLink size={20} />} color="grape" hint={pct(s.with_documents)} />
         <Kpi label="In a baseline" value={s.baselined} icon={<IconLock size={20} />} color="teal" hint={pct(s.baselined)} />
@@ -360,11 +364,11 @@ function Rtm({ projectId, lifecycle, onOpen }: { projectId: string; lifecycle?: 
       </SimpleGrid>
       <Group justify="space-between">
         <Checkbox size="xs" label="Show only untraced requirements" checked={gapsOnly} onChange={(e) => setGapsOnly(e.currentTarget.checked)} />
-        <Group gap="xs"><Text size="xs" c="dimmed">Not in this matrix yet: {d.not_yet_available.join(', ')}.</Text><Button component="a" href={`/api/v1/projects/${projectId}/rtm.csv`} size="xs" variant="default" leftSection={<IconDownload size={14} />}>Export CSV</Button></Group>
+        <Group gap="xs">{!!s.open_defects && <Text size="xs" c="red">{s.open_defects} requirement(s) have open defects.</Text>}<Button component="a" href={`/api/v1/projects/${projectId}/rtm.csv`} size="xs" variant="default" leftSection={<IconDownload size={14} />}>Export CSV</Button></Group>
       </Group>
       <Card withBorder p={0} style={{ overflow: 'auto', maxHeight: '64vh' }}>
-        <Table stickyHeader verticalSpacing={5} miw={1100} highlightOnHover>
-          <Table.Thead><Table.Tr><Table.Th>Requirement</Table.Th><Table.Th>Status</Table.Th><Table.Th>Traces to</Table.Th><Table.Th>Traced by</Table.Th><Table.Th>Tasks</Table.Th><Table.Th>Documents</Table.Th><Table.Th>Baselines</Table.Th></Table.Tr></Table.Thead>
+        <Table stickyHeader verticalSpacing={5} miw={1500} highlightOnHover>
+          <Table.Thead><Table.Tr><Table.Th>Requirement</Table.Th><Table.Th>Status</Table.Th><Table.Th>Traces to</Table.Th><Table.Th>Traced by</Table.Th><Table.Th>Designs</Table.Th><Table.Th>Tasks</Table.Th><Table.Th>Code</Table.Th><Table.Th>Documents</Table.Th><Table.Th>Tests</Table.Th><Table.Th>Defects</Table.Th><Table.Th>Baselines</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>
             {rows.map((r: any) => (
               <Table.Tr key={r.id} style={{ cursor: 'pointer' }} onClick={() => onOpen(r.id)}>
@@ -372,8 +376,12 @@ function Rtm({ projectId, lifecycle, onOpen }: { projectId: string; lifecycle?: 
                 <Table.Td><ReqStatus status={r.status} lifecycle={lifecycle} /></Table.Td>
                 <Table.Td><Group gap={3}>{r.traces_to.map((t: any, i: number) => <Tooltip key={i} label={LINK_LABEL[t.type] || t.type}><Badge size="xs" variant="outline" color="gray">{t.key}</Badge></Tooltip>)}</Group></Table.Td>
                 <Table.Td><Group gap={3}>{r.traced_by.map((t: any, i: number) => <Tooltip key={i} label={REVERSE_LABEL[t.type] || t.type}><Badge size="xs" variant="outline" color="gray">{t.key}</Badge></Tooltip>)}</Group></Table.Td>
+                <Table.Td><Group gap={3}>{r.designs.map((x: any) => <Tooltip key={x.id} label={`${x.link_type}${x.section ? ' · ' + x.section : ''} · ${x.status}`}><Badge size="xs" variant="light" color="indigo">{x.key}</Badge></Tooltip>)}</Group></Table.Td>
                 <Table.Td><Group gap={3}>{r.tasks.map((t: any) => <Badge key={t.id} size="xs" variant="light" color="blue">{t.key}</Badge>)}</Group></Table.Td>
+                <Table.Td><Group gap={3}>{r.code.map((c: any, i: number) => <Badge key={i} size="xs" variant="outline" color={c.state === 'merged' ? 'teal' : 'gray'}>{c.ref}</Badge>)}</Group></Table.Td>
                 <Table.Td><Group gap={3}>{r.documents.map((x: any) => <Badge key={x.id} size="xs" variant="light" color="grape">{x.number}</Badge>)}</Group></Table.Td>
+                <Table.Td><Group gap={3}>{r.tests.map((t: any) => <Tooltip key={t.id} label={`${t.status} · last result: ${t.last_result || 'not run'}`}><Badge size="xs" variant="light" color={RESULT_COLOR[t.last_result] || 'gray'}>{t.key}</Badge></Tooltip>)}</Group></Table.Td>
+                <Table.Td><Group gap={3}>{r.defects.map((x: any) => <Tooltip key={x.id} label={`${x.severity} · ${x.status}`}><Badge size="xs" variant="light" color={['OPEN', 'IN_PROGRESS', 'FIXED'].includes(x.status) ? 'red' : 'gray'}>{x.key}</Badge></Tooltip>)}</Group></Table.Td>
                 <Table.Td><Group gap={3}>{r.baselines.map((n: number) => <Badge key={n} size="xs" variant="light" color="teal">{n}</Badge>)}</Group></Table.Td>
               </Table.Tr>
             ))}

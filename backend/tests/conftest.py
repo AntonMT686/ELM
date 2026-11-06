@@ -5,7 +5,8 @@ import tempfile
 import pytest
 
 _tmp = tempfile.mkdtemp(prefix="elm-test-")
-# SQLite by default. Set ELM_TEST_DATABASE_URL to an EMPTY throwaway database to run the suite on PostgreSQL.
+# SQLite by default. Set ELM_TEST_DATABASE_URL to an EMPTY throwaway MySQL/MariaDB database (never proflow_uat itself)
+# to run the suite on the target engine, e.g. mysql+pymysql://elm:pw@localhost:3309/elm_test?charset=utf8mb4
 os.environ["ELM_DATABASE_URL"] = os.environ.get("ELM_TEST_DATABASE_URL") or f"sqlite:///{_tmp}/test.db"
 os.environ["ELM_STORAGE_DIR"] = f"{_tmp}/storage"
 os.environ["ELM_PKI_DIR"] = f"{_tmp}/pki"

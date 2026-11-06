@@ -53,7 +53,7 @@ export function TypeBadge({ type }: { type?: { code: string; name: string; color
   return <Tooltip label={type.name}><span className="lvl" style={{ background: type.color || '#64748b' }}>{type.code}</span></Tooltip>
 }
 
-const LEVEL_COLORS: Record<string, string> = { AIRCRAFT: '#1677ff', SYSTEM: '#722ed1', SUBSYSTEM: '#13c2c2', LRU: '#fa8c16', SRU: '#8c8c8c', ECFM: '#eb2f96' }
+const LEVEL_COLORS: Record<string, string> = { PRODUCT: '#1677ff', SYSTEM: '#722ed1', SUBSYSTEM: '#13c2c2', UNIT: '#fa8c16', MODULE: '#8c8c8c', COMPONENT: '#eb2f96' }
 export function LevelTag({ level, color }: { level: string; color?: string }) {
   return <span className="lvl" style={{ background: color || LEVEL_COLORS[level] || '#64748b' }}>{level}</span>
 }

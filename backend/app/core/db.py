@@ -11,7 +11,8 @@ from app.core.config import get_settings
 settings = get_settings()
 
 _connect_args = {"check_same_thread": False} if settings.database_url.startswith("sqlite") else {}
-engine = create_engine(settings.database_url, pool_pre_ping=True, connect_args=_connect_args, future=True)
+# pool_recycle stays below MySQL wait_timeout (default 8 h), so idle connections are renewed instead of failing.
+engine = create_engine(settings.database_url, pool_pre_ping=True, pool_recycle=3600, connect_args=_connect_args, future=True)
 
 if settings.database_url.startswith("sqlite"):
 

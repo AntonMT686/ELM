@@ -6,12 +6,12 @@ import pytest
 API = "/api/v1"
 
 
-def _amca(c):
-    return next(p for p in c.get(f"{API}/projects").json() if p["code"] == "AMCA")
+def _alpha(c):
+    return next(p for p in c.get(f"{API}/projects").json() if p["code"] == "ALPHA")
 
 
 def _plan_id(c):
-    items = c.get(f"{API}/projects/{_amca(c)['id']}/plans").json()["items"]
+    items = c.get(f"{API}/projects/{_alpha(c)['id']}/plans").json()["items"]
     return next(p for p in items if p["status"] == "ACTIVE")["id"]
 
 
@@ -46,14 +46,14 @@ def test_seeded_plan_wbs_and_overview_are_explainable(pe):
     assert ov["tasks"]["total"] == len(w["tasks"])
     assert ov["tasks"]["overdue"] >= 1 and ov["overdue"][0]["days_late"] > 0
     assert ov["workload"] and ov["calculation"]["rule"]
-    assert ov["cross_directorate_dependencies"], "an FCS task waits on an AWS task in the seed"
+    assert ov["cross_directorate_dependencies"], "a CTL task waits on an ELX task in the seed"
     row = ov["cross_directorate_dependencies"][0]
     assert row["successor_owner"] and row["predecessor_owner"] and row["successor_org"]["code"] != row["predecessor_org"]["code"]
     assert any(t["critical"] for t in w["tasks"])
 
 
 def test_lifecycle_rejects_illegal_jumps_and_requires_reasons(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     t = _new_task(pe, project, assignee_id=me_id)
     assert t["status"] == "OPEN"
     r = _go(pe, t["id"], "COMPLETED")
@@ -72,7 +72,7 @@ def test_lifecycle_rejects_illegal_jumps_and_requires_reasons(pe, me_id):
 
 
 def test_progress_is_not_set_by_the_client(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     t = _new_task(pe, project, assignee_id=me_id, reported_progress=100)
     assert t["progress"] == 0, "an unstarted task stays at 0 whatever the client sends"
     _go(pe, t["id"], "IN_PROGRESS")
@@ -84,7 +84,7 @@ def test_progress_is_not_set_by_the_client(pe, me_id):
 
 
 def test_completion_gates_block_until_satisfied(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     parent = _new_task(pe, project, title="Gated parent task", assignee_id=me_id)
     child = _new_task(pe, project, title="Gated child task", assignee_id=me_id, parent_id=parent["id"], estimated_hours=10)
     d = pe.post(f"{API}/work-items/{parent['id']}/checklist", json={"text": "Peer check done"}).json()
@@ -105,7 +105,7 @@ def test_completion_gates_block_until_satisfied(pe, me_id):
 
 
 def test_mandatory_deliverable_uses_real_document_status(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     docs = pe.get(f"{API}/documents", params={"status": "IN_REVIEW", "page_size": 5}).json()["items"]
     assert docs
     t = _new_task(pe, project, assignee_id=me_id)
@@ -118,7 +118,7 @@ def test_mandatory_deliverable_uses_real_document_status(pe, me_id):
 
 
 def test_named_reviewer_means_owner_cannot_self_accept(pe, me_id, client_factory):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     other = client_factory("eng.priya")
     other_id = other.get(f"{API}/auth/me").json()["user"]["id"]
     t = _new_task(other, project, assignee_id=other_id)
@@ -132,7 +132,7 @@ def test_named_reviewer_means_owner_cannot_self_accept(pe, me_id, client_factory
 
 
 def test_dependencies_block_start_and_reject_cycles(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     a = _new_task(pe, project, title="Predecessor task", assignee_id=me_id)
     b = _new_task(pe, project, title="Successor task", assignee_id=me_id)
     c = _new_task(pe, project, title="Third task in chain", assignee_id=me_id)
@@ -152,25 +152,25 @@ def test_dependencies_block_start_and_reject_cycles(pe, me_id):
 
 def test_scope_isolation_on_plans_and_tasks(pe, client_factory):
     adm = client_factory("adm.babu")
-    project = _amca(pe)
+    project = _alpha(pe)
     pid = _plan_id(pe)
     assert adm.get(f"{API}/projects/{project['id']}/plans").status_code == 403
     assert adm.get(f"{API}/plans/{pid}").status_code == 403
     assert adm.get(f"{API}/plans/{pid}/overview").status_code == 403
     assert adm.get(f"{API}/plans/{pid}/export.csv").status_code == 403
     assert adm.get(f"{API}/projects/{project['id']}/tree").status_code == 403
-    amca_task = pe.get(f"{API}/plans/{pid}").json()["tasks"][0]
-    assert adm.get(f"{API}/work-items/{amca_task['id']}").status_code == 403
-    assert _go(adm, amca_task["id"], "CANCELLED", "not mine").status_code == 403
+    alpha_task = pe.get(f"{API}/plans/{pid}").json()["tasks"][0]
+    assert adm.get(f"{API}/work-items/{alpha_task['id']}").status_code == 403
+    assert _go(adm, alpha_task["id"], "CANCELLED", "not mine").status_code == 403
     keys = [w["key"] for w in adm.get(f"{API}/work-items").json()]
-    assert keys and not any(k.startswith("AMCA-") for k in keys), "task lists must not leak across directorates"
+    assert keys and not any(k.startswith("ALPHA-") for k in keys), "task lists must not leak across directorates"
     # task.manage in another scope no longer means the right to change any task
-    assert adm.put(f"{API}/work-items/{amca_task['id']}", json={"title": "Hijacked title", "project_id": project["id"]}).status_code == 403
-    assert not any(p["project"]["code"] == "AMCA" for p in adm.get(f"{API}/planning/portfolio").json())
+    assert adm.put(f"{API}/work-items/{alpha_task['id']}", json={"title": "Hijacked title", "project_id": project["id"]}).status_code == 403
+    assert not any(p["project"]["code"] == "ALPHA" for p in adm.get(f"{API}/planning/portfolio").json())
 
 
 def test_plan_management_needs_plan_permission(pe, client_factory):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     member = client_factory("eng.priya")
     assert member.post(f"{API}/projects/{project}/plans", json={"name": "Not allowed"}).status_code == 403
     plan = pe.post(f"{API}/projects/{project}/plans", json={"name": "Replan draft"})
@@ -195,7 +195,7 @@ def test_links_must_agree_with_the_project(pe):
 
 
 def test_scenario_g_full_progress_with_open_gate_is_not_complete(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     plan = pe.post(f"{API}/projects/{project}/plans", json={"name": "Scenario G plan"}).json()["id"]
     activity = pe.post(f"{API}/plans/{plan}/activities", json={"title": "Only activity", "estimated_hours": 10}).json()["id"]
     t = _new_task(pe, project, activity_id=activity, assignee_id=me_id)
@@ -209,7 +209,7 @@ def test_scenario_g_full_progress_with_open_gate_is_not_complete(pe, me_id):
 
 
 def test_milestone_gate_and_reason(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     m = pe.post(f"{API}/projects/{project}/milestones", json={"name": "Gated milestone", "due_date": "2030-01-01"}).json()
     t = _new_task(pe, project, assignee_id=me_id, milestone_id=m["id"])
     r = pe.put(f"{API}/milestones/{m['id']}", json={"name": "Gated milestone", "due_date": "2030-01-01", "status": "ACHIEVED"})
@@ -219,7 +219,7 @@ def test_milestone_gate_and_reason(pe, me_id):
 
 
 def test_baseline_is_sealed_and_compares(pe, me_id):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     plan = pe.post(f"{API}/projects/{project}/plans", json={"name": "Baseline plan"}).json()["id"]
     a = pe.post(f"{API}/plans/{plan}/activities", json={"title": "Baselined activity"}).json()["id"]
     t = _new_task(pe, project, activity_id=a, assignee_id=me_id, start_date="2030-01-01", due_date="2030-02-01")
@@ -235,7 +235,7 @@ def test_baseline_is_sealed_and_compares(pe, me_id):
 
 
 def test_csv_export_neutralises_formulas_and_import_validates(pe):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     plan = pe.post(f"{API}/projects/{project}/plans", json={"name": "CSV plan"}).json()["id"]
     pe.post(f"{API}/plans/{plan}/activities", json={"title": "CSV activity"})
     bad = "title,priority,assignee,due_date\nGood row title,HIGH,pe.kumar,2030-01-01\nx,URGENT,nobody,not-a-date\n"
@@ -267,7 +267,7 @@ def test_lifecycle_is_configurable_and_validated(client_factory):
 
 
 def test_every_change_is_audited(pe, me_id, client_factory):
-    project = _amca(pe)["id"]
+    project = _alpha(pe)["id"]
     t = _new_task(pe, project, assignee_id=me_id)
     _go(pe, t["id"], "IN_PROGRESS")
     qa = client_factory("qa.verma")

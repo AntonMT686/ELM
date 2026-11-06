@@ -13,7 +13,7 @@
 
 This document describes how the ADA Process Management System (PMS) should route work, manage documents, review and approve revisions, sign and release deliverables, track programme/project progress, and preserve the existing ProFlow SDLC workflow capabilities.
 
-The target system must support multiple directorates and departments, multiple projects/programmes (for example AMCA and Mk1), and multiple process domains (software, hardware, hybrid and other ADA-configured domains).
+The target system must support multiple directorates and departments, multiple projects/programmes (for example Product Alpha and Product Beta), and multiple process domains (software, hardware, hybrid and other ADA-configured domains).
 
 **Critical design rule:** workflows are configured data, not hard-coded code paths. Diagrams below describe reference workflows. An ADA-authorized process administrator must be able to configure different stages, forms, roles, routing rules, approval chains, signature requirements and release gates for each process domain, project, directorate or document type.
 
@@ -71,20 +71,20 @@ flowchart TD
     DP3 --> U3["Employees"]
 ```
 
-The exact directorate and department list is managed as master data. Directorate names shown in the source requirement (Admin, AWS, ICT, etc.) are examples and must not be fixed in source code.
+The exact directorate and department list is managed as master data. Directorate names shown in the source requirement (Admin, ELX, ICT, etc.) are examples and must not be fixed in source code.
 
 ### 1.2 Programme and product hierarchy
 
 ```mermaid
 flowchart TD
-    PROG["Programme / Project<br/>AMCA / Mk1 / ..."]
+    PROG["Programme / Project<br/>Product Alpha / Product Beta / ..."]
     PROG --> SYS["System"]
     SYS --> SUB["Subsystem"]
-    SUB --> LRU["LRU"]
-    LRU --> ITEM["ECFM / Equipment / Component / other configured item"]
+    SUB --> Unit["Unit"]
+    Unit --> ITEM["Module / Equipment / Component / other configured item"]
 ```
 
-The supplied example **AMCA → LRU → ECFM** must be supported. System and subsystem levels, naming and parent-child constraints must be configurable because projects may use different product breakdown structures.
+The supplied example **Product Alpha → Unit → Component** must be supported. System and subsystem levels, naming and parent-child constraints must be configurable because projects may use different product breakdown structures.
 
 ### 1.3 Work context
 
@@ -94,7 +94,7 @@ Every process instance must have a clear context where applicable:
 - Owning and contributing directorates.
 - Department or group.
 - Process domain: software, hardware, hybrid or configured domain.
-- System/subsystem/LRU/component.
+- System/subsystem/Unit/component.
 - Document, work package, task or engineering deliverable.
 - Workflow definition and published version.
 - Data handling/classification label, if defined by ADA.
@@ -186,7 +186,7 @@ A context selector changes the user's current view; it never grants more access.
 | Department Head | Department tasks, activity documents, team workload, review actions, due dates |
 | Project Director / Project Manager | Milestones, phase progress, directorate contribution, document/release readiness, risks and decisions |
 | PGD / TD | Configurable oversight or technical portfolio widgets according to ADA-approved role mapping; do not hard-code acronym meaning |
-| Project Engineer / Technical Owner | Assigned project/system/subsystem/LRU, requirements, design, work packages, documents, reviews and test evidence |
+| Project Engineer / Technical Owner | Assigned project/system/subsystem/Unit, requirements, design, work packages, documents, reviews and test evidence |
 | Team Member | My work items, created documents, action inbox, reviews, assigned test cases and due dates |
 | Quality / Process / Audit | Workflow compliance, overdue reviews, baseline/release audit, non-conformities and process reports |
 | Administrator | Organization, users, roles, workflow templates, integrations and system health; approval authority is separate |
@@ -537,7 +537,7 @@ sequenceDiagram
 flowchart TD
     P["Create programme / project"]
     P --> ORG["Map lead and contributing directorates"]
-    ORG --> PB["Configure product breakdown<br/>System / Subsystem / LRU / other"]
+    ORG --> PB["Configure product breakdown<br/>System / Subsystem / Unit / other"]
     PB --> DOM["Configure process domains and workflows"]
     DOM --> PLAN["Create project plan and milestones"]
     PLAN --> WP["Create work packages by directorate / domain"]
@@ -885,14 +885,14 @@ Failed gates must report the exact missing condition.
 
 ## 15. Hardware / Engineering Process Template
 
-The exact ADA hardware workflow was not provided. The platform must therefore deliver a **configurable engineering process template**, not claim a prescribed aircraft development lifecycle.
+The exact ADA hardware workflow was not provided. The platform must therefore deliver a **configurable engineering process template**, not claim a prescribed product development lifecycle.
 
 ### 15.1 Example configurable flow
 
 ```mermaid
 flowchart TD
     A["Engineering project / work package"]
-    A --> B["Register system / subsystem / LRU"]
+    A --> B["Register system / subsystem / Unit"]
     B --> C["Capture source requirements and references"]
     C --> D["Prepare engineering documents / design artefacts"]
     D --> E["Technical review / cross-directorate review"]
@@ -913,7 +913,7 @@ flowchart TD
 
 Potential document/artifact categories to be enabled only where ADA approves them:
 
-- System/subsystem/LRU specification.
+- System/subsystem/Unit specification.
 - Requirement allocation and traceability.
 - Interface/control document.
 - Architecture/design document.
@@ -937,7 +937,7 @@ Potential document/artifact categories to be enabled only where ADA approves the
 
 ### 15.4 Do not hard-code
 
-Do not code fixed assumptions such as “all hardware documents go through exactly four reviews”, “all LRUs use the same phases”, or “all engineering activities need the same tests”. Encode approved process differences through workflow, metadata, role and gate configuration.
+Do not code fixed assumptions such as “all hardware documents go through exactly four reviews”, “all units use the same phases”, or “all engineering activities need the same tests”. Encode approved process differences through workflow, metadata, role and gate configuration.
 
 ---
 
@@ -1036,7 +1036,7 @@ If a mandatory release gate remains open, display a separate gate status and do 
 
 ### 17.4 Drill-down path
 
-Head Directorate → Programme → Project → Directorate → Department → System → Subsystem → LRU → Work Package → Phase → Document/Task.
+Head Directorate → Programme → Project → Directorate → Department → System → Subsystem → Unit → Work Package → Phase → Document/Task.
 
 The path is permission-filtered at every level. Hide inaccessible labels/counts if their existence itself is sensitive under ADA policy.
 
@@ -1320,10 +1320,10 @@ The runtime must validate this structure before publication. `ADA_CONFIGURED_PRO
 
 ```yaml
 work_package:
-  project: AMCA
+  project: ALPHA
   process_domain: hybrid
   engineering_item:
-    hierarchy: [SYSTEM, SUBSYSTEM, LRU, ECFM]
+    hierarchy: [SYSTEM, SUBSYSTEM, Unit, Component]
   lead_directorate: DIRECTORATE_A
   contributing_directorates:
     - DIRECTORATE_B
@@ -1509,7 +1509,7 @@ The following scenarios must be automated as integration/e2e tests where practic
 
 ## 25. ADA-ELM implementation notes (added 2026-11-03, session 1)
 
-**Runtime (Docker Compose):** `web` (nginx serving the Mantine SPA, proxies `/api`) → `backend` (FastAPI) → `db` (PostgreSQL 16, internal network) · `worker` (SLA sweeps) · OnlyOffice (the existing intranet Document Server, or the optional `onlyoffice` profile).
+**Runtime (changed 2026-11-05, session 4):** three host processes — `frontend` (`vite preview`: serves the SPA, proxies `/api`, sets the CSP), `backend` (FastAPI via `python -m app.serve`) and `worker` — against the existing MySQL/MariaDB database `proflow_uat` (ELM tables prefixed `elm_`). OnlyOffice is the only container; GitLab is the intranet instance. See `Docs/RUNNING.md`. (Session 1–3 used Docker Compose with PostgreSQL; that layout was removed.)
 
 **Document review flow as implemented:**
 1. Author creates the document from a type (number generated from the pattern; template stamped with number, title, project, item and the approval table) or uploads a file.
@@ -1541,3 +1541,33 @@ The following scenarios must be automated as integration/e2e tests where practic
 - Baselines are sealed text snapshots that later changes cannot alter (§19.2). Impact analysis reports and creates a review task; it changes nothing itself (§19.3).
 - Links: depends_on, derived_from, implements, related_to, conflicts_with, with dependency loops rejected. Traceability currently reaches tasks, documents and baselines; design, development, tests and defects join with §11–§13.
 - §10.3 external tools: file exchange by CSV with preview and external ID mapping. Approved records are never overwritten. ReqIF and live DOORS are not implemented (tool integrations are on hold).
+
+**Design and engineering artefacts as implemented (§11, added 2026-11-05, session 4):**
+
+- Configurable design types (code, category, allowed file types, embedded-editor flag, widget fields with required flags). Ten example types are seeded; ADA supplies the real list.
+- Design record → immutable versions: DIAGRAM (draw.io XML + SVG preview), FILE (upload, signature-checked) or LINK (external model/CAD URL). Saves name the version they started from; a stale save is refused and nothing is lost. Restore creates a new version that copies an old one.
+- Lifecycle as §11.1 with the record locked while SUBMITTED / UNDER_REVIEW. Review uses the shared artefact review (reviewers before approvers, owner and submitter excluded, decisions bound to version + SHA-256, new cycle on resubmit). Baseline needs `design.baseline` and an approval bound to the current content; later edits need a reason and leave the baseline untouched.
+- Links to requirements, documents, tasks and test cases, with a document-section field (§11.2 "document section mappings"). PDF record report (reportlab).
+- draw.io runs on an intranet host (`ELM_DRAWIO_URL`, optional container in `deploy/drawio`); the editor's `postMessage` origin and source window are checked; XML with DOCTYPE/entities and SVG with script are rejected; SVG previews are served with a restrictive CSP.
+
+**Software development and GitLab as implemented (§12, session 4):**
+
+- Task kind DEVELOPMENT with the §12.1 lifecycle (Open → In progress → Code review → Approved → Merged → Testing → Completed, Changes requested, Rejected). Lifecycles are configurable per kind and per project + kind (`/task-lifecycle?kind=`). A `system` actor lets ELM make moves that GitLab facts justify: MR opened → Code review; MR merged → Merged, but only from Approved (code-review approval stays in ELM, so a merge in GitLab never skips it).
+- GitLab adapter (REST v4, standard library HTTP, token server-side only). Repositories are allow-listed per project (`scm.manage`). From a task: create the branch (must contain the task key), open the merge request, sync, view the change summary. Push and merge-request webhooks (secret token, delivery UUID for idempotency) link commits/branches/MRs by task key within the repository's project. Manual reference mode records links ELM did not create. Every call is logged as an operation (SUCCEEDED/FAILED) and audited; GitLab-confirmed links cannot be deleted.
+- Completion gate: in a project with active repositories, a development task completes only with a merged MR and no open MR. ClearCase and other providers: not implemented (manual reference mode covers them meanwhile). No Git command runs on the server.
+
+**Testing, verification and defects as implemented (§13, session 4):**
+
+- Test cases with steps, revisions (snapshots) and the shared review; editing an approved case needs a reason and returns it to Draft. Plans with scope, build, environments, entry criteria and structured exit criteria (all executed, minimum pass rate, no open defects of given severities, manual checks), approval and activation (`test.approve`). Hierarchical suites.
+- Runs take approved cases at their current revision; the run shows the steps of that revision. Executions are append-only, with evidence files (SHA-256) and source MANUAL/AUTOMATION.
+- Failure taxonomy configurable (`/test-config/failure-causes`); only causes marked `creates_defect` (default: application defect) create or link a defect. A fixed defect sets its run cases to RETEST; a passing retest verifies the defect, a failing one re-opens it. The fixer cannot verify. Run closure needs `test.approve`, a person other than the executor, and every exit criterion.
+- Automation: jobs per tool; registered runners (`ELM_TEST_RUNNERS`, token) claim jobs and post results; `external_result_id` makes retries idempotent; with no runner a job fails with a clear message; an automated "application defect" result is recorded as BLOCKED for human triage.
+- The RTM now shows designs, merge requests, test cases with last result, and defects per requirement.
+
+**Deployment and software release as implemented (§14, added 2026-11-06, session 5):**
+
+- Per-project environments with a JSON configuration (approvals, gates, adapter, health check) whose SHA-256 is approved by someone other than its last editor (`deploy.approve`); an edit returns it to draft. A configuration can say approval of itself is not required (e.g. an integration rig).
+- Deployment requests bind approvals to a hash of environment, version, tag, commit, repository, test run, notes and rollback target (shared artefact review: requester excluded, all chosen approvers must approve, rejection ends the request). Lifecycle exactly as §14.1.
+- Gates (§14.2), each reporting the missing condition: target environment active and free; tag/commit resolved in GitLab and equal to the approved commit (or version only where no repository is required); approvals of this exact request; closed test run of the same build; no open defects of blocking severities (deferred defects are accepted risk); released documents of required types and a complete checklist; approved configuration; secrets present as `ELM_DEPLOY_SECRET_<NAME>` and the adapter usable; change window and blackout dates in the ADA time zone.
+- Execution (§14.3): `POST /deployments/{id}/execute` returns a job id; the worker (own 20 s loop) runs adapters manual / gitlab_pipeline / script (allow-listed folder, no shell, timeout, secrets only as environment variables) and a post-deployment HTTP health check. Logs are masked (secret values, `password=`, `token=`, `Authorization:`, GitLab tokens). CI callbacks are HMAC-SHA256 signed. Retry is a new attempt; rollback is a new deployment of the version that was current before; cancel, retry and rollback need `deploy.execute`, a reason where it applies, and are audited.
+

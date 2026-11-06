@@ -1,4 +1,4 @@
-"""Configurable document numbering, e.g. "{PROJECT}-{ITEM}-{TYPE}-{SEQ:4}" → AMCA-FCS-SRS-0003."""
+"""Configurable document numbering, e.g. "{PROJECT}-{ITEM}-{TYPE}-{SEQ:4}" → ALPHA-CTL-SRS-0003."""
 from __future__ import annotations
 
 import re

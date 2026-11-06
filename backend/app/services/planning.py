@@ -33,7 +33,7 @@ from app.models import (
 )
 from app.services.authz import Principal, _expand_org
 from app.services.serial import iso, org_brief, user_brief
-from app.services.task_lifecycle import get_lifecycle, state_map, weight_of
+from app.services.task_lifecycle import get_lifecycle, merged_state_map, weight_of
 
 ACTIVITY_CLOSED = {"COMPLETED", "CANCELLED"}
 
@@ -165,7 +165,7 @@ class PlanData:
         self.plan = plan
         self.project = db.get(Project, plan.project_id)
         self.lifecycle = get_lifecycle(db, plan.project_id)
-        self.states = state_map(self.lifecycle)
+        self.states = merged_state_map(db, plan.project_id)  # plans can mix task kinds (e.g. DEVELOPMENT)
         self.packages = list(db.execute(select(WorkPackage).where(WorkPackage.plan_id == plan.id).order_by(WorkPackage.sort_order, WorkPackage.code)).scalars())
         self.activities = list(db.execute(select(PlanActivity).where(PlanActivity.plan_id == plan.id).order_by(PlanActivity.sort_order, PlanActivity.start_date, PlanActivity.title)).scalars())
         self.tasks = list(db.execute(select(WorkItem).where(WorkItem.plan_id == plan.id).order_by(WorkItem.sort_order, WorkItem.start_date, WorkItem.key)).scalars())

@@ -1000,7 +1000,8 @@ def rollback(db: Session, run_id: uuid.UUID, force: bool) -> dict:
             problems.append(f"User {u.username} was changed after the import.")
     if problems and not force:
         raise SystemExit("Rollback refused; these records have been used since the import (use --force to delete them anyway):\n  " + "\n  ".join(problems[:40]))
-    tables = {m.__tablename__: m for m in [RequirementBaselineItem, RequirementBaseline, RequirementReview, RequirementEvent, RequirementRevision, RequirementWorkItem, Requirement, RequirementSource, LegacyAuditRecord, TaskComment, WorkItemEvent, TaskDependency, WorkItem, PlanActivity, Milestone, ProjectPlan, PlanPhase, EngineeringItem, HierarchyLevel, RoleAssignment, ProjectMember, Project, UserOrgAssignment, User, OrgUnit]}
+    # Logical names (without the elm_ table prefix) are what legacy_import_map stores.
+    tables = {m.__tablename__.removeprefix("elm_"): m for m in [RequirementBaselineItem, RequirementBaseline, RequirementReview, RequirementEvent, RequirementRevision, RequirementWorkItem, Requirement, RequirementSource, LegacyAuditRecord, TaskComment, WorkItemEvent, TaskDependency, WorkItem, PlanActivity, Milestone, ProjectPlan, PlanPhase, EngineeringItem, HierarchyLevel, RoleAssignment, ProjectMember, Project, UserOrgAssignment, User, OrgUnit]}
     if task_ids:
         for model, col in ((WorkItemEvent, WorkItemEvent.work_item_id), (TaskComment, TaskComment.work_item_id)):
             for o in db.execute(select(model).where(col.in_(task_ids))).scalars():
