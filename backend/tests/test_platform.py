@@ -71,23 +71,40 @@ def test_full_document_lifecycle(client_factory):
     bad = priya.post(f"/api/v1/documents/{doc['id']}/submit", json={"picks": {"check": [users["eng.priya"]], "review": [users["rev.joshi"]], "approve": [users["td.menon"]]}})
     assert bad.status_code in (400, 403)
 
-    ok = priya.post(f"/api/v1/documents/{doc['id']}/submit", json={"picks": {"check": [users["chk.das"]], "review": [users["rev.joshi"]], "approve": [users["td.menon"]]}})
+    picks = {"picks": {"check": [users["chk.das"]], "review": [users["rev.joshi"]], "approve": [users["td.menon"]]}}
+    no_list = priya.post(f"/api/v1/documents/{doc['id']}/submit", json=picks)
+    assert no_list.json()["error"]["code"] == "CHECKLIST_REQUIRED", "engineering documents need the preparer's checklist"
+    assert priya.put(f"/api/v1/documents/{doc['id']}/review-checklist", json={"items": [{"text": "Block diagram included", "guidance": "Section 3"},
+                                                                                       {"text": "Interfaces listed", "stages": ["review"]}]}).status_code == 200
+    ok = priya.post(f"/api/v1/documents/{doc['id']}/submit", json=picks)
     assert ok.status_code == 200, ok.text
+    frozen = priya.put(f"/api/v1/documents/{doc['id']}/review-checklist", json={"items": [{"text": "Changed while in review"}]})
+    assert frozen.json()["error"]["code"] == "LOCKED"
     # Locked: cannot upload content while in review
     up = priya.post(f"/api/v1/documents/{doc['id']}/content", files={"file": ("x.docx", b"PK\x03\x04junk", "application/octet-stream")})
     assert up.status_code == 409
 
     das = client_factory("chk.das")
     task = next(t for t in das.get("/api/v1/inbox").json()["pending"] if t["document"]["id"] == doc["id"])
-    # checklist enforced
+    mine = task["doc_checklist"]["items"]
+    assert [i["text"] for i in mine] == ["Block diagram included"], "the checker answers only the items for the check stage"
+    # checklist enforced (fixed workflow checklist and preparer's checklist)
     r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "approve"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "CHECKLIST"
+    fixed = {c: True for c in task["stage"]["checklist"]}
+    r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "approve", "checklist": fixed, "item_results": {mine[0]["id"]: {"result": "NOT_OK"}}})
+    assert "remark" in " ".join(r.json()["error"]["details"]["errors"])
+    r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "approve", "checklist": fixed, "item_results": {mine[0]["id"]: {"result": "NOT_OK", "remark": "missing"}}})
+    assert "cannot be approved" in " ".join(r.json()["error"]["details"]["errors"]), "a not-OK item leads to request changes"
     # request changes requires comment
     r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "request_changes"})
     assert r.json()["error"]["code"] == "COMMENT_REQUIRED"
-    r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "request_changes", "comment": "Add block diagram"})
+    r = das.post(f"/api/v1/tasks/{task['id']}/decide", json={"decision": "request_changes", "comment": "Add block diagram", "item_results": {mine[0]["id"]: {"result": "NOT_OK", "remark": "No block diagram in section 3"}}})
     assert r.status_code == 200
     assert priya.get(f"/api/v1/documents/{doc['id']}").json()["status"] == "CHANGES_REQUESTED"
+    hist = priya.get(f"/api/v1/documents/{doc['id']}/workflow").json()[0]
+    answers = [a for st in hist["stages"] for t in st["tasks"] for a in t["checklist_results"]]
+    assert answers == [{**answers[0], "text": "Block diagram included", "result": "NOT_OK", "remark": "No block diagram in section 3"}], "the author sees which item failed and why"
 
     # rework → new iteration → resubmit (cycle 2)
     from app.services.documents import stamp_template
@@ -100,7 +117,8 @@ def test_full_document_lifecycle(client_factory):
     for who in ("chk.das", "rev.joshi", "td.menon"):
         c = client_factory(who)
         t = next(t for t in c.get("/api/v1/inbox").json()["pending"] if t["document"]["id"] == doc["id"])
-        r = c.post(f"/api/v1/tasks/{t['id']}/decide", json={"decision": "approve", "comment": "ok", "checklist": checklist})
+        answers = {i["id"]: {"result": "OK"} for i in t["doc_checklist"]["items"]}
+        r = c.post(f"/api/v1/tasks/{t['id']}/decide", json={"decision": "approve", "comment": "ok", "checklist": checklist, "item_results": answers})
         assert r.status_code == 200, r.text
     # signatures: wrong password rejected
     t = next(t for t in priya.get("/api/v1/inbox").json()["pending"] if t["document"]["id"] == doc["id"])

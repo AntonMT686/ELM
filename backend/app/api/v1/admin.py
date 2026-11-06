@@ -290,6 +290,7 @@ class DocTypeIn(BaseModel):
     allowed_extensions: str = "docx,xlsx,pptx,pdf"
     default_template: str | None = None
     requires_signature: bool = True
+    require_review_checklist: bool = False
     applicable_levels: str | None = None
     icon: str | None = None
     color: str | None = None

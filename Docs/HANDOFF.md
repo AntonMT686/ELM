@@ -185,6 +185,26 @@ target server.
 **Not built from §14:** signed (cryptographic) configuration approval with the PKI adapter (approval is a recorded,
 hash-bound decision), deployment reports in PDF, and import of PMS deployment tables.
 
+## 2f. Session 6 (2026-11-06): review checklists, requirement tagging, end-to-end traceability, phase reports, user manual
+
+* **Preparer review checklist** (`services/doc_checklist.py`, tables `elm_document_checklist_items/_results`): the author
+  writes the checklist per revision (Document → Review checklist tab); doc types with `require_review_checklist`
+  (default on for engineering) cannot be submitted without one; every reviewer/approver answers OK / Not OK / N/A
+  (remark required) and cannot approve with an unanswered or Not OK item; results show in the review history; the
+  checklist is copied forward on revise and frozen while in review.
+* **Requirement tagging** (`services/req_tagging.py`): per-source tag format (`{PREFIX} {PROJECT} {ITEM} {LEVEL}
+  {SEQ:n}`), scan a .docx for tagged paragraphs and "shall" statements (tables included, section = nearest heading),
+  import selected paragraphs at any breakdown level, write `[TAG]` back into the document as a new iteration.
+* **Traceability** (`services/trace.py`, `api/v1/trace.py`, `/trace` page, Trace buttons on every record): graph over
+  document → requirement → design → task → code → test case → run → defect → deployment; *Start activity* on a
+  requirement derives a design record / task / development task / test case already linked; GitLab links now also on
+  design records, test cases and defects (`ScmLink.artifact_type/artifact_id`, key regex accepts multi-part keys).
+* **Phase reports** (`services/reports.py`, `/reports` page): documents, requirements+RTM, design, development,
+  testing, defects, deployment, end-to-end traceability, as PDF and CSV; access-filtered and audited.
+* Migration `0005_checklist_tagging`; DBA SQL regenerated. Tests 74/74 on SQLite and MariaDB.
+* `Docs/USER_MANUAL.md`: how modules and levels link, and step-by-step use of every module.
+* Not yet built: maintenance / in-service change (§16), design-type admin screen.
+
 ## 3. Older verification items
 1. `deploy\windows\setup.ps1` then `start-all.bat`, sign in as each persona, and walk through: create → edit in OnlyOffice → submit → check → review → approve → 4 signatures → release by `cm.sharma`.
 2. Check OnlyOffice networking: browser → `ELM_ONLYOFFICE_PUBLIC_URL`, OnlyOffice container → `ELM_BACKEND_INTERNAL_URL` (the backend on the host, e.g. `http://host.docker.internal:8000`), backend → `ELM_ONLYOFFICE_INTERNAL_URL`. The JWT secret must match the Document Server.

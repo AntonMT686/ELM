@@ -40,6 +40,7 @@ export interface Revision {
 
 export interface DocFull extends DocBrief {
   description?: string; keywords?: string; external_ref?: string
+  review_checklist?: { required: boolean; items: any[]; stages: { key: string; name: string }[]; can_edit: boolean; revision: string | null }
   domain?: { id: string; code: string; name: string } | null
   current_revision_full?: Revision | null
   revisions: Revision[]

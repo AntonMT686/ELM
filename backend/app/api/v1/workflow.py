@@ -51,7 +51,20 @@ def _task_dict(ctx: Ctx, t: WorkflowTask) -> dict:
         "due_at": iso(t.due_at), "overdue": bool(due and due < utcnow() and t.status == "PENDING"),
         "delegated_from": user_brief(db.get(User, t.assignee_id)) if t.assignee_id != ctx.user.id else None,
         "acted_at": iso(t.acted_at), "comment": t.decision_comment, "created_at": iso(t.created_at),
+        "doc_checklist": _doc_checklist(db, inst, t, stage),
     }
+
+
+def _doc_checklist(db, inst: WorkflowInstance, t: WorkflowTask, stage) -> dict:
+    """The preparer's checklist items this stage must answer, and what earlier stages of this cycle answered."""
+    from app.services import doc_checklist as dc
+
+    all_items = dc.active(dc.items(db, inst.revision_id))
+    mine = dc.applicable(all_items, t.stage_key) if stage and stage.type in ("review", "approval") else []
+    others = [x.id for x in db.execute(select(WorkflowTask).where(WorkflowTask.instance_id == inst.id, WorkflowTask.id != t.id)).scalars()]
+    earlier = dc.results_for_tasks(db, others)
+    return {"items": [dc.item_dict(i) for i in mine], "all_items": len(all_items), "my_answers": dc.results_for_tasks(db, [t.id]).get(t.id, []),
+            "earlier": [{"task_id": str(k), "answers": v} for k, v in earlier.items()]}
 
 
 @router.get("/inbox")
@@ -79,11 +92,13 @@ class DecisionIn(BaseModel):
     decision: str = Field(pattern=r"^(approve|request_changes|reject)$")
     comment: str | None = Field(default=None, max_length=5000)
     checklist: dict[str, bool] | None = None
+    # answers to the preparer's checklist: {item_id: {"result": "OK" | "NOT_OK" | "NA", "remark": "..."}}
+    item_results: dict[str, dict] | None = None
 
 
 @router.post("/tasks/{tid}/decide")
 def decide(tid: uuid.UUID, body: DecisionIn, ctx: Ctx = Depends(get_ctx)):
-    inst = wf.decide(ctx.db, ctx.user, tid, body.decision, body.comment, body.checklist)
+    inst = wf.decide(ctx.db, ctx.user, tid, body.decision, body.comment, body.checklist, body.item_results)
     ctx.db.commit()
     return {"instance_status": inst.status, "current_stage_key": inst.current_stage_key}
 

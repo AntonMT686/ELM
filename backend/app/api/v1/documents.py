@@ -37,6 +37,7 @@ from app.services import documents as docsvc
 from app.services import release as relsvc
 from app.services import storage
 from app.services import workflow_engine as wf
+from app.services import doc_checklist
 from app.services.authz import can_on_document, doc_scope, document_visibility_clause
 from app.services.serial import doc_dict, iso, org_brief, revision_dict, user_brief
 from app.services.signature import get_provider
@@ -176,6 +177,7 @@ def get_document(did: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
         "releases": [{"id": str(e.id), "release_no": e.release_no, "revision_id": str(e.revision_id), "released_at": iso(e.released_at), "status": e.status, "by": user_brief(db.get(User, e.released_by_id)), "sha256": e.sha256} for e in regs],
         "active_workflow_id": str(active.id) if active else None,
         "my_task_id": my_task,
+        "review_checklist": _checklist_view(db, d, cur, can_edit),
         "permissions": {
             "edit": can_edit and bool(cur and not cur.locked),
             "submit": can_edit and bool(cur and cur.status in wf.OPEN_REVISION_STATES and cur.file_id),
@@ -189,6 +191,46 @@ def get_document(did: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
     }
 
 
+# ------------------------------------------------------------------ preparer's review checklist
+def _checklist_view(db, d: Document, cur: DocumentRevision | None, can_edit: bool) -> dict:
+    dt = db.get(DocumentType, d.type_id)
+    rows = doc_checklist.active(doc_checklist.items(db, cur.id)) if cur else []
+    stages = []
+    try:
+        spec = wf.spec_of(wf.resolve_version(db, d))
+        stages = [{"key": s.key, "name": s.name} for s in spec.stages if s.type in ("review", "approval")]
+    except AppError:
+        pass
+    return {"required": bool(dt and dt.require_review_checklist), "items": [doc_checklist.item_dict(i) for i in rows], "stages": stages,
+            "can_edit": bool(can_edit and cur and not cur.locked and cur.status in doc_checklist.EDITABLE), "revision": cur.label if cur else None}
+
+
+class ChecklistItemIn(BaseModel):
+    text: str = Field(min_length=3, max_length=500)
+    guidance: str | None = Field(default=None, max_length=4000)
+    stages: list[str] = Field(default_factory=list)
+
+
+class ChecklistIn(BaseModel):
+    items: list[ChecklistItemIn] = Field(max_length=200)
+
+
+@router.put("/{did}/review-checklist")
+def set_review_checklist(did: uuid.UUID, body: ChecklistIn, ctx: Ctx = Depends(get_ctx)):
+    """The preparer writes (or replaces) the review checklist of the current revision."""
+    d = _doc(ctx, did, "doc.edit")
+    cur = ctx.db.get(DocumentRevision, d.current_revision_id)
+    keys = set()
+    try:
+        keys = {s.key for s in wf.spec_of(wf.resolve_version(ctx.db, d)).stages}
+    except AppError:
+        pass
+    rows = doc_checklist.replace_items(ctx.db, cur, [i.model_dump() for i in body.items], ctx.user.id, keys)
+    ctx.audit("document.checklist", "document", d.id, f"{d.number} rev {cur.label}: review checklist set ({len(rows)} items)", {"items": [i.text for i in body.items]})
+    ctx.db.commit()
+    return _checklist_view(ctx.db, d, cur, True)
+
+
 @router.get("/{did}/workflow")
 def document_workflow(did: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
     """All review cycles with stage runs and decisions (for the visual lifecycle tracker)."""
@@ -200,6 +242,7 @@ def document_workflow(did: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
         spec = wf.spec_of(v)
         runs = {r.stage_key: r for r in db.execute(select(WorkflowStageRun).where(WorkflowStageRun.instance_id == inst.id)).scalars()}
         tasks = db.execute(select(WorkflowTask).where(WorkflowTask.instance_id == inst.id).order_by(WorkflowTask.created_at)).scalars().all()
+        answers = doc_checklist.results_for_tasks(db, [t.id for t in tasks])
         rev = db.get(DocumentRevision, inst.revision_id)
         stages = []
         for s in spec.stages:
@@ -208,7 +251,7 @@ def document_workflow(did: uuid.UUID, ctx: Ctx = Depends(get_ctx)):
                 "key": s.key, "name": s.name, "type": s.type, "mode": s.mode, "checklist": s.checklist, "instructions": s.instructions,
                 "status": r.status if r else ("PENDING" if inst.status == "ACTIVE" else "NOT_REACHED"),
                 "started_at": iso(r.started_at) if r else None, "ended_at": iso(r.ended_at) if r else None, "due_at": iso(r.due_at) if r else None,
-                "tasks": [{"id": str(t.id), "assignee": user_brief(db.get(User, t.assignee_id)), "acted_by": user_brief(db.get(User, t.acted_by_id)) if t.acted_by_id and t.acted_by_id != t.assignee_id else None,
+                "tasks": [{"id": str(t.id), "checklist_results": answers.get(t.id, []), "assignee": user_brief(db.get(User, t.assignee_id)), "acted_by": user_brief(db.get(User, t.acted_by_id)) if t.acted_by_id and t.acted_by_id != t.assignee_id else None,
                            "status": t.status, "comment": t.decision_comment, "acted_at": iso(t.acted_at), "due_at": iso(t.due_at), "sha256": t.revision_sha256} for t in tasks if t.stage_key == s.key],
             })
         out.append({"id": str(inst.id), "status": inst.status, "cycle_no": inst.cycle_no, "revision": {"id": str(rev.id), "label": rev.label}, "iteration": inst.iteration,

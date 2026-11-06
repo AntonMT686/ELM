@@ -3,6 +3,8 @@ import { IconAlertTriangle, IconBug, IconCheck, IconFlask, IconListCheck, IconLo
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import ArtifactCode from '../components/ArtifactCode'
+import { TraceButton } from './TracePage'
 import { api } from '../api/client'
 import { useAction, useProjects, useUsers } from '../api/hooks'
 import { HistoryPanel, LinksPanel, ReasonModal, ReviewPanel, SubmitReviewModal } from '../components/ArtifactParts'
@@ -147,9 +149,10 @@ function CaseDetail({ id, projectId }: { id: string; projectId: string }) {
         {c.can_edit && c.status === 'UNDER_REVIEW' && <Button size="xs" variant="default" onClick={() => setAsk('withdraw')}>Withdraw</Button>}
         {c.can_edit && !['UNDER_REVIEW', 'OBSOLETE'].includes(c.status) && <Button size="xs" variant="default" onClick={() => setEditing(true)}>Edit</Button>}
         {c.status !== 'OBSOLETE' && <Button size="xs" variant="subtle" color="gray" onClick={() => setAsk('obsolete')}>Make obsolete</Button>}
+        <TraceButton type="TEST_CASE" id={id} />
       </Group>
       <Tabs defaultValue="content" keepMounted={false}>
-        <Tabs.List><Tabs.Tab value="content">Content</Tabs.Tab><Tabs.Tab value="reviews">Review ({c.reviews.length})</Tabs.Tab><Tabs.Tab value="links">Traceability ({c.links.length})</Tabs.Tab><Tabs.Tab value="runs">Runs ({c.runs.length})</Tabs.Tab><Tabs.Tab value="history">History</Tabs.Tab></Tabs.List>
+        <Tabs.List><Tabs.Tab value="content">Content</Tabs.Tab><Tabs.Tab value="reviews">Review ({c.reviews.length})</Tabs.Tab><Tabs.Tab value="links">Traceability ({c.links.length})</Tabs.Tab><Tabs.Tab value="runs">Runs ({c.runs.length})</Tabs.Tab><Tabs.Tab value="code">Code</Tabs.Tab><Tabs.Tab value="history">History</Tabs.Tab></Tabs.List>
         <Tabs.Panel value="content" pt="md">
           <Stack gap="xs">
             {c.objective && <div><Text size="xs" c="dimmed">Objective</Text><Text size="sm">{c.objective}</Text></div>}
@@ -161,6 +164,7 @@ function CaseDetail({ id, projectId }: { id: string; projectId: string }) {
         <Tabs.Panel value="reviews" pt="md"><ReviewPanel reviews={c.reviews} decideUrl={(rid) => `/test-cases/${id}/reviews/${rid}/decide`} keys={keys} /></Tabs.Panel>
         <Tabs.Panel value="links" pt="md"><LinksPanel links={c.links} projectId={projectId} addUrl={`/test-cases/${id}/links`} removeUrl={(lid) => `/test-cases/${id}/links/${lid}`} keys={keys} canEdit={c.can_edit} types={['REQUIREMENT', 'DESIGN', 'TASK']} linkTypes={['verifies', 'related_to', 'implements']} /></Tabs.Panel>
         <Tabs.Panel value="runs" pt="md"><Stack gap={4}>{c.runs.map((r: any, i: number) => <Group key={i} gap="xs"><Text size="sm" fw={600}>{r.run.key}</Text><Text size="sm">{r.run.title}</Text><Tag v={r.status} colors={RESULT_COLOR} /><Text size="xs" c="dimmed">rev {r.revision}</Text></Group>)}{!c.runs.length && <Text size="sm" c="dimmed">Not in any run yet.</Text>}</Stack></Tabs.Panel>
+        <Tabs.Panel value="code" pt="md"><ArtifactCode type="TEST_CASE" id={id} /></Tabs.Panel>
         <Tabs.Panel value="history" pt="md"><HistoryPanel history={c.history} /></Tabs.Panel>
       </Tabs>
       <SubmitReviewModal opened={submitting} onClose={() => setSubmitting(false)} title={`Submit ${c.key} revision ${c.revision}`} loading={submit.isPending} onSubmit={(v) => submit.mutate(v)} exclude={[c.owner?.id]} />
@@ -320,6 +324,7 @@ function RunDetail({ id, projectId, openDefect }: { id: string; projectId: strin
         <Group mt="xs" gap="xs">
           {r.can_close && <Button size="xs" color="teal" leftSection={<IconLock size={14} />} onClick={() => setClosing(true)}>Close run</Button>}
           {r.can_execute && r.cases.some((c: any) => c.case.automation_id) && <Button size="xs" variant="light" leftSection={<IconRobot size={14} />} loading={auto.isPending} onClick={() => auto.mutate(undefined)}>Run automated cases</Button>}
+          <TraceButton type="TEST_RUN" id={id} />
           {r.status === 'CLOSED' && <Text size="xs" c="dimmed">Closed by {r.closed_by?.full_name}: {r.closure_note}</Text>}
         </Group>
         {!!jobs.data?.length && <Stack gap={2} mt="xs">{jobs.data.map((j) => <Group key={j.id} gap={6}><Badge size="xs" color={j.status === 'FAILED' ? 'red' : j.status === 'SUCCEEDED' ? 'teal' : 'blue'}>{j.status.toLowerCase()}</Badge><Text size="xs">{j.tool} · {j.cases} case(s) · {j.results_received} result(s)</Text>{j.error && <Text size="xs" c="red">{j.error}</Text>}</Group>)}</Stack>}
@@ -452,7 +457,7 @@ function DefectDetail({ id, projectId }: { id: string; projectId: string }) {
   return (
     <Stack>
       <div><Group gap={8}><Text size="xs" c="dimmed" fw={700}>{d.key}</Text><Badge size="xs" color={SEV_COLOR[d.severity]}>{d.severity}</Badge><Badge size="sm" variant="light">{label(d.status)}</Badge></Group><Text fw={650} size="lg" mt={4}>{d.title}</Text>{d.description && <Text size="sm" c="dimmed">{d.description}</Text>}</div>
-      <Group gap="xs">{d.transitions.map((t: any) => <Button key={t.to} size="xs" variant="light" onClick={() => (t.reason_required || t.to === 'FIXED' ? setMove(t) : go.mutate({ to: t.to }))}>{t.label}</Button>)}{!d.transitions.length && <Text size="xs" c="dimmed">No status change is available to you.</Text>}</Group>
+      <Group gap="xs"><TraceButton type="DEFECT" id={id} />{d.transitions.map((t: any) => <Button key={t.to} size="xs" variant="light" onClick={() => (t.reason_required || t.to === 'FIXED' ? setMove(t) : go.mutate({ to: t.to }))}>{t.label}</Button>)}{!d.transitions.length && <Text size="xs" c="dimmed">No status change is available to you.</Text>}</Group>
       {move && (
         <Card withBorder>
           <Stack gap="xs">

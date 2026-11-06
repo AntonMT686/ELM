@@ -30,7 +30,8 @@ from app.services import audit as auditsvc
 from app.services.gitlab_client import GitLab, GitLabError
 from app.services.notify import notify
 
-KEY_RE = re.compile(r"(?<![A-Za-z0-9])([A-Z][A-Z0-9_]{1,39}-\d{1,9})(?![0-9])")
+# ELM keys: ALPHA-12 (task), ALPHA-DES-0001 (design), ALPHA-TC-0003 (test case), ALPHA-CTL-CPU-SRS-007 (requirement) ...
+KEY_RE = re.compile(r"(?<![A-Za-z0-9-])([A-Z][A-Z0-9_]*(?:-[A-Z][A-Z0-9_]*){0,6}-\d{1,9})(?![0-9])")
 BRANCH_OK = re.compile(r"^(?!/)(?!.*\.\.)(?!.*//)(?!.*@\{)[A-Za-z0-9._/-]{1,200}(?<![./])$")
 MR_STATES = {"opened", "merged", "closed", "locked"}
 
@@ -329,6 +330,47 @@ def handle_webhook(db: Session, event: str, delivery_id: str | None, body: bytes
     return {"status": rec.status, "links_created": created}
 
 
+ARTIFACT_MODELS = {"DESIGN": "DesignRecord", "TEST_CASE": "TestCase", "DEFECT": "Defect"}
+
+
+def _artifacts_for(db: Session, repo: ScmRepository, keys: set[str]) -> list[tuple[str, object]]:
+    """Design records, test cases and defects of the repository's project whose key appears in GitLab text."""
+    if not keys:
+        return []
+    import app.models as m
+
+    out = []
+    for a_type, name in ARTIFACT_MODELS.items():
+        model = getattr(m, name)
+        out += [(a_type, o) for o in db.execute(select(model).where(model.key.in_(keys), model.project_id == repo.project_id)).scalars()]
+    return out
+
+
+def upsert_artifact_link(db: Session, a_type: str, obj, repo: ScmRepository, kind: str, ref: str, *, origin: str, actor_id=None, **fields) -> tuple[ScmLink, bool]:
+    ref = str(ref)[:255]
+    link = db.execute(select(ScmLink).where(ScmLink.artifact_type == a_type, ScmLink.artifact_id == obj.id, ScmLink.repository_id == repo.id, ScmLink.kind == kind, ScmLink.ref == ref)).scalar_one_or_none()
+    created = link is None
+    if created:
+        link = ScmLink(artifact_type=a_type, artifact_id=obj.id, repository_id=repo.id, kind=kind, ref=ref, origin=origin, created_by_id=actor_id)
+        db.add(link)
+    for k, v in fields.items():
+        if v is not None:
+            setattr(link, k, v[:500] if isinstance(v, str) and k in ("title", "url") else v)
+    db.flush()
+    if created:
+        from app.services import artifacts as art
+
+        shown = f"!{ref}" if kind == "MERGE_REQUEST" else (ref[:10] if kind == "COMMIT" else ref)
+        art.add_event(db, a_type, obj.id, "SCM", actor_id, None, f"{kind.lower().replace('_', ' ')} {shown}", fields.get("title"))
+    return link, created
+
+
+def artifact_links(db: Session, a_type: str, a_id) -> list[dict]:
+    rows = db.execute(select(ScmLink).where(ScmLink.artifact_type == a_type, ScmLink.artifact_id == a_id).order_by(ScmLink.kind, ScmLink.created_at.desc())).scalars().all()
+    repos = {r.id: r for r in db.execute(select(ScmRepository).where(ScmRepository.id.in_({x.repository_id for x in rows} | {uuid.uuid4()}))).scalars()}
+    return [link_dict(x, repos.get(x.repository_id)) for x in rows]
+
+
 def _tasks_for(db: Session, repo: ScmRepository, keys: set[str]) -> list[WorkItem]:
     if not keys:
         return []
@@ -346,8 +388,12 @@ def _on_push(db: Session, repo: ScmRepository, p: dict) -> int:
         _, new = upsert_link(db, task, repo, "BRANCH", branch, origin="WEBHOOK", url=_branch_url(repo, branch), state="deleted" if deleted else "active")
         n += new
     for c in p.get("commits") or []:
-        for task in _tasks_for(db, repo, task_keys(c.get("message"), branch)):
+        keys = task_keys(c.get("message"), branch)
+        for task in _tasks_for(db, repo, keys):
             _, new = upsert_link(db, task, repo, "COMMIT", c.get("id", ""), origin="WEBHOOK", **_commit_fields(c, repo))
+            n += new
+        for a_type, obj in _artifacts_for(db, repo, keys):
+            _, new = upsert_artifact_link(db, a_type, obj, repo, "COMMIT", c.get("id", ""), origin="WEBHOOK", **_commit_fields(c, repo))
             n += new
     return n
 
@@ -358,8 +404,12 @@ def _on_merge_request(db: Session, repo: ScmRepository, p: dict) -> int:
         return 0
     mr = {**a, "author": {"username": (p.get("user") or {}).get("username")}}
     n = 0
-    for task in _tasks_for(db, repo, task_keys(a.get("title"), a.get("description"), a.get("source_branch"))):
+    keys = task_keys(a.get("title"), a.get("description"), a.get("source_branch"))
+    for task in _tasks_for(db, repo, keys):
         link, new = upsert_link(db, task, repo, "MERGE_REQUEST", str(a["iid"]), origin="WEBHOOK", **_mr_fields(mr))
         n += new
         _automate(db, task, link)
+    for a_type, obj in _artifacts_for(db, repo, keys):
+        _, new = upsert_artifact_link(db, a_type, obj, repo, "MERGE_REQUEST", str(a["iid"]), origin="WEBHOOK", **_mr_fields(mr))
+        n += new
     return n

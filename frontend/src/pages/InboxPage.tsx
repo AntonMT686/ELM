@@ -6,6 +6,7 @@ import { IconArrowBackUp, IconCheck, IconExternalLink, IconInbox, IconRosetteDis
 import dayjs from 'dayjs'
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { ChecklistAnswerForm, checklistNotOk, checklistReady, type Answer } from '../components/ReviewChecklist'
 import { api } from '../api/client'
 import { useAction, useDocWorkflow, useInbox, useUsers } from '../api/hooks'
 import type { InboxTask } from '../api/types'
@@ -105,8 +106,11 @@ function TaskDetail({ task }: { task: InboxTask }) {
   const [signOpen, setSignOpen] = useState(false)
   const [reassignOpen, setReassignOpen] = useState(false)
   const [pendingDecision, setPendingDecision] = useState('')
-  const allChecked = task.stage.checklist.every((c) => checks[c])
-  const decide = useAction((d: string) => { setPendingDecision(d); return api.post(`/tasks/${task.id}/decide`, { decision: d, comment: comment || undefined, checklist: checks }) }, {
+  const [answers, setAnswers] = useState<Record<string, Answer>>({})
+  const prep = (task as any).doc_checklist || { items: [], earlier: [] }
+  const notOk = checklistNotOk(prep.items, answers)
+  const allChecked = task.stage.checklist.every((c) => checks[c]) && checklistReady(prep.items, answers)
+  const decide = useAction((d: string) => { setPendingDecision(d); return api.post(`/tasks/${task.id}/decide`, { decision: d, comment: comment || undefined, checklist: checks, item_results: answers }) }, {
     success: (r: any) => (r.instance_status === 'ACTIVE' ? 'Decision recorded — moved to the next stage' : r.instance_status === 'COMPLETED' ? 'Approved — document is ready for release' : 'Returned to the author with your comments'),
     invalidate: [['inbox'], ['doc', task.document.id], ['doc-wf', task.document.id], ['dashboard']],
   })
@@ -150,9 +154,10 @@ function TaskDetail({ task }: { task: InboxTask }) {
               </>
             ) : (
               <>
+                <ChecklistAnswerForm items={prep.items} answers={answers} onChange={setAnswers} earlier={prep.earlier} />
                 {task.stage.checklist.length > 0 && (
                   <Stack gap={8} mb="md">
-                    <Text fw={600} size="sm">Review checklist</Text>
+                    <Text fw={600} size="sm">Process checklist (set by the process owner)</Text>
                     {task.stage.checklist.map((c) => <Checkbox key={c} label={c} checked={!!checks[c]} onChange={(e) => setChecks({ ...checks, [c]: e.currentTarget.checked })} />)}
                   </Stack>
                 )}
@@ -161,9 +166,9 @@ function TaskDetail({ task }: { task: InboxTask }) {
                   <Button size="md" fullWidth leftSection={<IconCheck size={18} />} disabled={!allChecked} loading={decide.isPending && pendingDecision === 'approve'} onClick={() => decide.mutate('approve')}>
                     {task.stage.type === 'approval' ? 'Approve' : 'Accept & forward'}
                   </Button>
-                  {!allChecked && task.stage.checklist.length > 0 && <Text size="xs" c="dimmed" ta="center">Tick all checklist items to enable approval.</Text>}
+                  {!allChecked && (task.stage.checklist.length > 0 || prep.items.length > 0) && <Text size="xs" c="dimmed" ta="center">{notOk.length ? `${notOk.length} item(s) are Not OK: request changes instead.` : 'Answer every checklist item (remarks for Not OK / N/A) to enable approval.'}</Text>}
                   <Group grow>
-                    <Button variant="default" leftSection={<IconArrowBackUp size={16} />} disabled={!comment.trim()} loading={decide.isPending && pendingDecision === 'request_changes'} onClick={() => decide.mutate('request_changes')}>Request changes</Button>
+                    <Button variant="default" leftSection={<IconArrowBackUp size={16} />} disabled={!comment.trim() || prep.items.some((i: any) => answers[i.id]?.result && answers[i.id].result !== 'OK' && !(answers[i.id].remark || '').trim())} loading={decide.isPending && pendingDecision === 'request_changes'} onClick={() => decide.mutate('request_changes')}>Request changes</Button>
                     {task.stage.allow_reject && (
                       <Button variant="light" color="red" leftSection={<IconX size={16} />} disabled={!comment.trim()}
                         onClick={() => modals.openConfirmModal({ title: 'Reject this submission?', children: <Text size="sm">The review cycle ends and the author is notified.</Text>, labels: { confirm: 'Reject', cancel: 'Cancel' }, confirmProps: { color: 'red' }, onConfirm: () => decide.mutate('reject') })}>Reject</Button>

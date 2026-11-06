@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.core.db import Base
+from app.core.db import Base, utcnow
 from app.models.base import IdMixin, TimestampMixin, VersionMixin
 from app.models.types import LongText, UTCDateTime
 
@@ -38,6 +38,8 @@ class DocumentType(IdMixin, TimestampMixin, Base):
     default_template: Mapped[str | None] = mapped_column(String(20))  # docx | xlsx | pptx
     requires_signature: Mapped[bool] = mapped_column(Boolean, default=True)
     applicable_levels: Mapped[str | None] = mapped_column(String(300))  # comma list of level codes; empty = any
+    # The preparer must write a review checklist before submitting documents of this type (reviewers answer each item).
+    require_review_checklist: Mapped[bool] = mapped_column(Boolean, default=False)
     icon: Mapped[str | None] = mapped_column(String(40))
     color: Mapped[str | None] = mapped_column(String(20))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -157,3 +159,29 @@ class DocumentAccessLog(IdMixin, Base):
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_users.id"))
     action: Mapped[str] = mapped_column(String(20))  # VIEW | DOWNLOAD | EDIT_SESSION
     at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class DocumentChecklistItem(IdMixin, TimestampMixin, Base):
+    """Review checklist written by the preparer for one revision. Frozen while the revision is in review; a new revision
+    starts with a copy that the preparer can change."""
+
+    __tablename__ = "elm_document_checklist_items"
+    revision_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_document_revisions.id"), index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    text: Mapped[str] = mapped_column(String(500))
+    guidance: Mapped[str | None] = mapped_column(LongText)  # where to look, acceptance hint, section
+    stages: Mapped[str | None] = mapped_column(String(300))  # comma list of workflow stage keys; empty = every review/approval stage
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_users.id"))
+
+
+class DocumentChecklistResult(IdMixin, Base):
+    """One reviewer's (or approver's) answer to one checklist item in one workflow task. Never edited afterwards."""
+
+    __tablename__ = "elm_document_checklist_results"
+    __table_args__ = (UniqueConstraint("task_id", "item_id", name="uq_checklist_result"),)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_workflow_tasks.id"), index=True)
+    item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_document_checklist_items.id"), index=True)
+    result: Mapped[str] = mapped_column(String(10))  # OK | NOT_OK | NA
+    remark: Mapped[str | None] = mapped_column(LongText)
+    at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
+    by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_users.id"))

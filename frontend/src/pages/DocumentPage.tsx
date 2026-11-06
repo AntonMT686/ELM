@@ -4,14 +4,16 @@ import { Dropzone } from '@mantine/dropzone'
 import { useDisclosure } from '@mantine/hooks'
 import { notifications } from '@mantine/notifications'
 import {
-  IconArrowBackUp, IconCertificate, IconCheck, IconChevronDown, IconCloudUpload, IconDots, IconDownload, IconEdit, IconFilePlus, IconGitFork, IconHistory,
+  IconArrowBackUp, IconListCheck, IconCertificate, IconCheck, IconChevronDown, IconCloudUpload, IconDots, IconDownload, IconEdit, IconFilePlus, IconGitFork, IconHistory,
   IconLink, IconMessage, IconRosetteDiscountCheck, IconSend, IconShare, IconShieldCheck, IconX,
 } from '@tabler/icons-react'
 import { Background, Controls, ReactFlow, type Edge, type Node } from '@xyflow/react'
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { ChecklistEditor, ChecklistResults } from '../components/ReviewChecklist'
 import { api, errorText, fileUrl } from '../api/client'
+import { TraceButton } from './TracePage'
 import { useAction, useDoc, useDocWorkflow, useOrgUnits } from '../api/hooks'
 import type { DocFull } from '../api/types'
 import { ClassTag, EmptyBlock, FileIcon, fmtSize, Hash, LevelTag, StatusTag, TypeBadge, UserAvatar, When } from '../components/common'
@@ -65,8 +67,11 @@ export default function DocumentPage() {
           </Group>
           <Group gap="xs">
             {d.my_task_id && <Button color="orange" onClick={() => nav(`/inbox?task=${d.my_task_id}`)}>Your action is pending</Button>}
+            <TraceButton type="DOCUMENT" id={d.id} size="sm" />
             {p.edit && cur?.file && ['docx', 'xlsx', 'pptx'].includes(cur.file.extension) && <Button leftSection={<IconEdit size={16} />} onClick={() => nav(`/documents/${d.id}/edit`)}>Edit online</Button>}
-            {p.submit && <Button color="brand" variant="filled" leftSection={<IconSend size={16} />} onClick={submitM.open}>Submit for review</Button>}
+            {p.submit && (d.review_checklist?.required && !d.review_checklist.items.length
+              ? <Tooltip label="Prepare the review checklist first (Review checklist tab)"><Button color="brand" variant="light" leftSection={<IconListCheck size={16} />} onClick={() => setSp({ tab: 'checklist' }, { replace: true })}>Prepare checklist to submit</Button></Tooltip>
+              : <Button color="brand" variant="filled" leftSection={<IconSend size={16} />} onClick={submitM.open}>Submit for review</Button>)}
             {p.release && <Button color="teal" leftSection={<IconCertificate size={16} />} onClick={releaseM.open}>Release</Button>}
             {p.revise && <Button variant="light" leftSection={<IconGitFork size={16} />} onClick={reviseM.open}>Start revision {String.fromCharCode((cur?.label.charCodeAt(0) || 64) + 1)}</Button>}
             <Menu position="bottom-end" width={230}>
@@ -83,7 +88,7 @@ export default function DocumentPage() {
           </Group>
         </Group>
         {d.status === 'CHANGES_REQUESTED' && latest && <Alert mt="md" color="orange" variant="light" icon={<IconArrowBackUp />} title="Changes were requested">
-          {latest.stages.flatMap((s) => s.tasks).filter((t) => t.status === 'CHANGES_REQUESTED' || t.status === 'REJECTED').map((t) => <div key={t.id}><b>{t.assignee.full_name}:</b> {t.comment}</div>)}
+          {latest.stages.flatMap((s) => s.tasks).filter((t) => t.status === 'CHANGES_REQUESTED' || t.status === 'REJECTED').map((t: any) => <div key={t.id}><b>{t.assignee.full_name}:</b> {t.comment}<ChecklistResults results={(t.checklist_results || []).filter((r: any) => r.result !== 'OK')} /></div>)}
           <Text size="xs" mt={4}>Update the content (edit online or upload), then submit again — a new review cycle starts on the new content.</Text>
         </Alert>}
         {latest && <div style={{ marginTop: 16 }}><Group justify="space-between" mb={6}><Text size="sm" fw={600}>{latest.workflow.name} <Text span c="dimmed" size="xs">v{latest.workflow.version_no} · cycle {latest.cycle_no} · rev {latest.revision.label}</Text></Text><StatusTag status={latest.status} /></Group><LifecycleTracker run={latest} /></div>}
@@ -93,6 +98,7 @@ export default function DocumentPage() {
         <Tabs value={tab} onChange={(v) => setSp({ tab: v || 'preview' }, { replace: true })}>
           <Tabs.List px="md" pt={6}>
             <Tabs.Tab value="preview">Preview</Tabs.Tab>
+            <Tabs.Tab value="checklist" leftSection={<IconListCheck size={14} />}>Review checklist ({d.review_checklist?.items.length || 0}){d.review_checklist?.required && !d.review_checklist.items.length ? ' ⚠' : ''}</Tabs.Tab>
             <Tabs.Tab value="reviews" leftSection={<IconHistory size={14} />}>Review history ({wf.data?.length || 0})</Tabs.Tab>
             <Tabs.Tab value="revisions">Revisions</Tabs.Tab>
             <Tabs.Tab value="signatures" leftSection={<IconRosetteDiscountCheck size={14} />}>Signatures ({d.signatures.length})</Tabs.Tab>
@@ -103,6 +109,7 @@ export default function DocumentPage() {
           </Tabs.List>
           <div style={{ padding: 16 }}>
             {tab === 'preview' && (cur ? <DocumentPreview docId={d.id} revisionId={cur.id} ext={cur.file?.extension} height={760} /> : null)}
+            {tab === 'checklist' && d.review_checklist && <ChecklistEditor docId={d.id} view={d.review_checklist} keys={[['doc', d.id]]} />}
             {tab === 'reviews' && <ReviewHistory runs={wf.data || []} />}
             {tab === 'revisions' && <Revisions d={d} />}
             {tab === 'signatures' && <Signatures d={d} />}
@@ -269,6 +276,7 @@ function ReviewHistory({ runs }: { runs: any[] }) {
               <Timeline.Item key={t.id} color={t.status === 'APPROVED' || t.status === 'SIGNED' ? 'teal' : t.status === 'REASSIGNED' ? 'gray' : 'red'} title={<Group gap={6}><Text size="sm" fw={600}>{s.name}</Text><StatusTag status={t.status} /></Group>}>
                 <Text size="sm">{t.acted_by ? `${t.acted_by.full_name} on behalf of ${t.assignee.full_name}` : t.assignee.full_name} · <When at={t.acted_at} /></Text>
                 {t.comment && <Text size="sm" c="dimmed">“{t.comment}”</Text>}
+                <ChecklistResults results={t.checklist_results} />
               </Timeline.Item>
             )))}
           </Timeline>

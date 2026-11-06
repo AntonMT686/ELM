@@ -5,6 +5,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, errorText } from '../api/client'
+import ArtifactCode from '../components/ArtifactCode'
+import { TraceButton } from './TracePage'
 import { useAction, useProjects } from '../api/hooks'
 import { HistoryPanel, LinksPanel, ReasonModal, ReviewPanel, SubmitReviewModal } from '../components/ArtifactParts'
 import { EmptyBlock, Hash, PageTitle, UserAvatar, When, fmtSize } from '../components/common'
@@ -144,6 +146,7 @@ function Detail({ id, projectId, states }: { id: string; projectId: string; stat
         {d.can_baseline && <Button size="xs" color="teal" variant="light" leftSection={<IconLock size={14} />} onClick={() => setAsk('baseline')}>Baseline</Button>}
         {d.can_edit && !d.locked && <Button size="xs" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEditing(true)}>Edit details</Button>}
         <Button size="xs" variant="default" component="a" href={`/api/v1/designs/${id}/report.pdf`} leftSection={<IconFileTypePdf size={14} />}>PDF report</Button>
+        <TraceButton type="DESIGN" id={id} />
       </Group>
       {RELEASED.includes(d.status) && d.can_edit && <Alert color="yellow" p="xs" icon={<IconAlertTriangle size={16} />}>This record is {d.status.toLowerCase()}. A change needs a reason and starts a new version; {d.baselined_version ? `baseline version ${d.baselined_version} stays as it was.` : 'it will need approval again.'}</Alert>}
       <Tabs defaultValue="content" keepMounted={false}>
@@ -152,6 +155,7 @@ function Detail({ id, projectId, states }: { id: string; projectId: string; stat
           <Tabs.Tab value="versions">Versions ({d.versions.length})</Tabs.Tab>
           <Tabs.Tab value="reviews">Review ({d.reviews.length})</Tabs.Tab>
           <Tabs.Tab value="links">Traceability ({d.links.length})</Tabs.Tab>
+          <Tabs.Tab value="code">Code</Tabs.Tab>
           <Tabs.Tab value="history">History</Tabs.Tab>
         </Tabs.List>
         <Tabs.Panel value="content" pt="md">
@@ -192,6 +196,7 @@ function Detail({ id, projectId, states }: { id: string; projectId: string; stat
           <LinksPanel links={d.links} projectId={projectId} addUrl={`/designs/${id}/links`} removeUrl={(lid) => `/designs/${id}/links/${lid}`} keys={keys} canEdit={d.can_edit && d.status !== 'BASELINED'}
             types={['REQUIREMENT', 'DOCUMENT', 'TASK', 'TEST_CASE']} linkTypes={['satisfies', 'describes', 'implements', 'related_to', 'verified_by']} withSection />
         </Tabs.Panel>
+        <Tabs.Panel value="code" pt="md"><ArtifactCode type="DESIGN" id={id} /></Tabs.Panel>
         <Tabs.Panel value="history" pt="md"><HistoryPanel history={d.history} /></Tabs.Panel>
       </Tabs>
       <SubmitReviewModal opened={submitting} onClose={() => setSubmitting(false)} title={`Submit ${d.key} version ${d.current_version}`} loading={submit.isPending} onSubmit={(v) => submit.mutate(v)} exclude={[d.owner?.id]} />

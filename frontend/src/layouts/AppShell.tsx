@@ -1,7 +1,7 @@
 import { ActionIcon, AppShell as MAppShell, Badge, Burger, Button, Drawer, Group, Indicator, Kbd, Menu, ScrollArea, SegmentedControl, Stack, Text, Tooltip, UnstyledButton, useMantineColorScheme } from '@mantine/core'
 import { useDisclosure, useLocalStorage } from '@mantine/hooks'
 import {
-  IconAffiliate, IconBell, IconBinaryTree2, IconBrandGitlab, IconFlask, IconRocket, IconSchema, IconBuildingCommunity, IconCertificate, IconChecklist, IconFileDescription, IconFiles, IconFingerprint,
+  IconAffiliate, IconBell, IconBinaryTree2, IconBrandGitlab, IconFlask, IconHierarchy3, IconReportAnalytics, IconRocket, IconSchema, IconBuildingCommunity, IconCertificate, IconChecklist, IconFileDescription, IconFiles, IconFingerprint,
   IconGitBranch, IconHome, IconInbox, IconLayoutKanban, IconListCheck, IconLogout, IconMoon, IconRoute, IconSearch, IconShieldLock, IconSun, IconTimeline, IconUsers, IconUserCog,
 } from '@tabler/icons-react'
 import { useQueryClient } from '@tanstack/react-query'
@@ -39,6 +39,8 @@ export default function AppShell() {
       { to: '/design', label: 'Design', icon: <IconSchema size={19} /> },
       { to: '/testing', label: 'Testing & defects', icon: <IconFlask size={19} /> },
       { to: '/deployments', label: 'Deployments', icon: <IconRocket size={19} /> },
+      { to: '/trace', label: 'Traceability', icon: <IconHierarchy3 size={19} /> },
+      { to: '/reports', label: 'Reports', icon: <IconReportAnalytics size={19} /> },
       { to: '/documents', label: 'Documents', icon: <IconFiles size={19} /> },
       { to: '/source-control', label: 'Source control', icon: <IconBrandGitlab size={19} /> },
       { to: '/releases', label: 'Release register', icon: <IconCertificate size={19} /> },

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, ForeignKey, Integer, String, UniqueConstraint, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base, utcnow
@@ -36,8 +36,12 @@ class ScmLink(IdMixin, TimestampMixin, Base):
     """Traceability from a task to a branch, commit or merge request (architecture §12.3: every push/MR links back)."""
 
     __tablename__ = "elm_scm_links"
-    __table_args__ = (UniqueConstraint("work_item_id", "repository_id", "kind", "ref", name="uq_scm_link"),)
-    work_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_work_items.id"), index=True)
+    __table_args__ = (UniqueConstraint("work_item_id", "repository_id", "kind", "ref", name="uq_scm_link"),
+                      UniqueConstraint("artifact_type", "artifact_id", "repository_id", "kind", "ref", name="uq_scm_artifact_link"))
+    # A link belongs to a task, or to another artefact (design record, test case, defect) found by its key in GitLab.
+    work_item_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_work_items.id"), index=True)
+    artifact_type: Mapped[str | None] = mapped_column(String(20))  # DESIGN | TEST_CASE | DEFECT
+    artifact_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, index=True)
     repository_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_scm_repositories.id"), index=True)
     kind: Mapped[str] = mapped_column(String(20))  # BRANCH | COMMIT | MERGE_REQUEST
     ref: Mapped[str] = mapped_column(String(255))  # branch name, commit SHA or MR iid

@@ -18,6 +18,8 @@ from app.core.deps import Ctx, get_ctx, get_or_404
 from app.core.errors import AppError, Conflict, Forbidden
 from app.models import (
     Document,
+    FileObject,
+    DocumentRevision,
     EngineeringItem,
     OrgUnit,
     Project,
@@ -37,8 +39,9 @@ from app.models import (
     WorkItem,
     WorkItemEvent,
 )
+from app.services import req_tagging as tagging
 from app.services import requirements as svc
-from app.services.authz import can_view_document
+from app.services.authz import can_on_document, can_view_document
 from app.services.notify import notify
 from app.services.numbering import next_seq
 from app.services.planning import can_manage_task, can_view_task, require_view_project
@@ -134,6 +137,7 @@ class SourceIn(BaseModel):
     external_ref: str | None = Field(default=None, max_length=300)
     external_version: str | None = Field(default=None, max_length=80)
     key_prefix: str = Field(pattern=r"^[A-Za-z0-9_.-]{2,40}$")
+    tag_format: str = Field(default="{PREFIX}-{SEQ:4}", max_length=120)
     document_id: uuid.UUID | None = None
     org_unit_id: uuid.UUID | None = None
 
@@ -141,7 +145,7 @@ class SourceIn(BaseModel):
 def _source_dict(ctx: Ctx, s: RequirementSource) -> dict:
     d = ctx.db.get(Document, s.document_id) if s.document_id else None
     n = ctx.db.execute(select(func.count(Requirement.id)).where(Requirement.source_id == s.id)).scalar()
-    return {"id": str(s.id), "name": s.name, "source_system": s.source_system, "external_ref": s.external_ref, "external_version": s.external_version, "key_prefix": s.key_prefix,
+    return {"id": str(s.id), "name": s.name, "source_system": s.source_system, "external_ref": s.external_ref, "external_version": s.external_version, "key_prefix": s.key_prefix, "tag_format": s.tag_format or tagging.DEFAULT_FORMAT,
             "document": {"id": str(d.id), "number": d.number} if d else None, "org": org_brief(ctx.db.get(OrgUnit, s.org_unit_id)) if s.org_unit_id else None, "file_sha256": s.file_sha256, "last_synced_at": iso(s.last_synced_at), "requirements": n, "created_at": iso(s.created_at)}
 
 
@@ -162,12 +166,167 @@ def create_source(pid: uuid.UUID, body: SourceIn, ctx: Ctx = Depends(get_ctx)):
         doc = get_or_404(ctx.db, Document, body.document_id, "Document")
         if not can_view_document(ctx.db, ctx.p, doc):
             raise Forbidden("You do not have access to that document.")
+    tagging.validate_format(body.tag_format)
     s = RequirementSource(project_id=pid, created_by_id=ctx.user.id, **body.model_dump())
     ctx.db.add(s)
     ctx.db.flush()
-    ctx.audit("requirement.source.create", "requirement_source", s.id, f"Requirement source {s.name} added to {p.code}")
+    ctx.audit("requirement.source.create", "requirement_source", s.id, f"Requirement source {s.name} added to {p.code}", {"tag_format": s.tag_format})
     ctx.db.commit()
     return _source_dict(ctx, s)
+
+
+class SourcePatch(BaseModel):
+    tag_format: str | None = Field(default=None, max_length=120)
+    document_id: uuid.UUID | None = None
+    external_version: str | None = Field(default=None, max_length=80)
+
+
+@router.patch("/requirement-sources/{sid}")
+def update_source(sid: uuid.UUID, body: SourcePatch, ctx: Ctx = Depends(get_ctx)):
+    s = get_or_404(ctx.db, RequirementSource, sid, "Source")
+    _project(ctx, s.project_id)
+    ctx.p.require("req.edit", project_id=s.project_id)
+    changes = body.model_dump(exclude_unset=True)
+    if "tag_format" in changes and changes["tag_format"]:
+        tagging.validate_format(changes["tag_format"])
+    if changes.get("document_id"):
+        doc = get_or_404(ctx.db, Document, changes["document_id"], "Document")
+        if not can_view_document(ctx.db, ctx.p, doc):
+            raise Forbidden("You do not have access to that document.")
+    for k, v in changes.items():
+        setattr(s, k, v)
+    ctx.audit("requirement.source.update", "requirement_source", s.id, f"Requirement source {s.name} updated", {k: str(v) for k, v in changes.items()})
+    ctx.db.commit()
+    return _source_dict(ctx, s)
+
+
+# ------------------------------------------------------------------ requirements tagged in documents
+class ScanIn(BaseModel):
+    document_id: uuid.UUID | None = None
+    detect: str = Field(default="both", pattern=r"^(tags|shall|both)$")
+
+
+def _scan(ctx: Ctx, s: RequirementSource, document_id, detect: str):
+    doc_id = document_id or s.document_id
+    if not doc_id:
+        raise AppError("Choose the document to scan, or set it on the source.")
+    doc = get_or_404(ctx.db, Document, doc_id, "Document")
+    if not can_view_document(ctx.db, ctx.p, doc):
+        raise Forbidden("You do not have access to that document.")
+    if doc.project_id and doc.project_id != s.project_id:
+        raise AppError("The document belongs to another project.")
+    rev = ctx.db.get(DocumentRevision, doc.current_revision_id)
+    if not rev or not rev.file_id:
+        raise AppError("The document has no content yet.")
+    from app.services import storage
+
+    data = storage.read_bytes(ctx.db.get(FileObject, rev.file_id), verify=True)
+    rx = tagging.tag_regex(s)
+    existing = {r.key: r for r in ctx.db.execute(select(Requirement).where(Requirement.project_id == s.project_id)).scalars()}
+    out = []
+    for para in tagging.paragraphs(data):
+        if para["heading"] or len(para["text"]) < 8:
+            continue
+        m = rx.search(para["text"])
+        if not m and not (detect in ("shall", "both") and tagging.SHALL.search(para["text"])):
+            continue
+        if m and detect == "shall":
+            continue
+        tag = m.group(1) if m else None
+        body = tagging.strip_tag(para["text"], rx)
+        cur = existing.get(tag) if tag else None
+        state = "new"
+        if cur:
+            same = svc.hash_of(cur) == svc.content_hash(tagging.title_of(body), body, cur.acceptance_criteria, cur.req_type, cur.priority)
+            state = "unchanged" if same else ("locked" if cur.status in svc.RELEASED_STATES or cur.status in svc.LOCKED_WHILE else "changed")
+        out.append({"paragraph": para["index"], "section": para["section"], "text": body, "tag": tag, "state": state, "requirement": {"id": str(cur.id), "key": cur.key, "status": cur.status} if cur else None})
+    return doc, rev, data, out
+
+
+@router.post("/requirement-sources/{sid}/document-scan")
+def scan_document(sid: uuid.UUID, body: ScanIn, ctx: Ctx = Depends(get_ctx)):
+    """Preview: which paragraphs of the document are (or look like) requirements, and what importing would do."""
+    s = get_or_404(ctx.db, RequirementSource, sid, "Source")
+    _project(ctx, s.project_id)
+    doc, rev, _, items = _scan(ctx, s, body.document_id, body.detect)
+    return {"document": {"id": str(doc.id), "number": doc.number, "title": doc.title, "revision": rev.label, "iteration": rev.iteration, "status": rev.status},
+            "tag_format": s.tag_format or tagging.DEFAULT_FORMAT, "example": tagging.render(s.tag_format or tagging.DEFAULT_FORMAT, tagging._context(ctx.db, s, None), 1),
+            "can_write_tags": can_on_document(ctx.db, ctx.p, doc, "doc.edit") and not rev.locked and rev.status in ("DRAFT", "CHANGES_REQUESTED", "REJECTED"),
+            "items": items, "counts": {k: sum(1 for i in items if i["state"] == k) for k in ("new", "changed", "unchanged", "locked")}}
+
+
+class DocImportIn(ScanIn):
+    paragraphs: list[int] = Field(min_length=1)
+    item_id: uuid.UUID | None = None
+    req_type: str = Field(default="FUNCTIONAL", max_length=30)
+    priority: str = Field(default="MEDIUM", pattern=PRIORITIES)
+    write_tags: bool = True
+    reason: str | None = Field(default=None, max_length=1000)
+
+
+@router.post("/requirement-sources/{sid}/document-import")
+def import_from_document(sid: uuid.UUID, body: DocImportIn, ctx: Ctx = Depends(get_ctx)):
+    """Create or update the chosen requirements from the document, link them to it with their section and, if asked,
+    write the newly assigned tags back into the document as a new iteration."""
+    s = get_or_404(ctx.db, RequirementSource, sid, "Source")
+    p = _project(ctx, s.project_id)
+    if not ctx.p.has("req.edit", project_id=s.project_id):
+        raise Forbidden("Importing requirements needs requirement edit permission in this project.", details={"permission": "req.edit"})
+    if body.item_id and get_or_404(ctx.db, EngineeringItem, body.item_id, "Item").project_id != s.project_id:
+        raise AppError("The breakdown item belongs to another project.")
+    doc, rev, data, items = _scan(ctx, s, body.document_id, body.detect)
+    chosen = [i for i in items if i["paragraph"] in set(body.paragraphs)]
+    created, updated, unchanged, skipped, new_tags = [], [], [], [], {}
+    for it in chosen:
+        title = tagging.title_of(it["text"])
+        if it["state"] == "locked":
+            skipped.append({"tag": it["tag"], "reason": f"{it['tag']} is {it['requirement']['status'].lower().replace('_', ' ')}; change it in ELM with a reason"})
+            continue
+        if it["requirement"]:
+            r = ctx.db.get(Requirement, uuid.UUID(it["requirement"]["id"]))
+            if it["state"] == "changed":
+                svc.apply_content(ctx.db, r, {"title": title, "description": it["text"]}, actor=ctx.user.id, reason=body.reason or f"Updated from {doc.number}")
+                svc.add_event(ctx.db, r, "IMPORTED", ctx.user.id, comment=f"Updated from {doc.number} rev {rev.label}, {it['section'] or 'no section'}")
+                updated.append(r.key)
+            else:
+                unchanged.append(r.key)
+        else:
+            if it["tag"]:
+                key = it["tag"]
+                tagging.note_used(ctx.db, s, key, body.item_id)
+            else:
+                key = tagging.next_tag(ctx.db, s, body.item_id)
+                new_tags[it["paragraph"]] = key
+            r = Requirement(project_id=s.project_id, source_id=s.id, key=key, title=title, description=it["text"], req_type=body.req_type, priority=body.priority, status="DRAFT",
+                            owner_id=ctx.user.id, item_id=body.item_id, content_sha256=svc.content_hash(title, it["text"], None, body.req_type, body.priority))
+            ctx.db.add(r)
+            ctx.db.flush()
+            svc.write_revision(ctx.db, r, ctx.user.id, f"Tagged in {doc.number}")
+            svc.add_event(ctx.db, r, "IMPORTED", ctx.user.id, to="DRAFT", comment=f"From {doc.number} rev {rev.label}, {it['section'] or 'no section'}")
+            created.append(r.key)
+        link = ctx.db.execute(select(RequirementDocument).where(RequirementDocument.requirement_id == r.id, RequirementDocument.document_id == doc.id)).scalar_one_or_none()
+        if link is None:
+            link = RequirementDocument(requirement_id=r.id, document_id=doc.id, link_type="specified_in", created_by_id=ctx.user.id)
+            ctx.db.add(link)
+        link.section, link.paragraph = it["section"], it["paragraph"]
+    tags_written = None
+    if new_tags and body.write_tags:
+        if not (can_on_document(ctx.db, ctx.p, doc, "doc.edit") and not rev.locked and rev.status in ("DRAFT", "CHANGES_REQUESTED", "REJECTED")):
+            tags_written = {"written": False, "reason": f"{doc.number} rev {rev.label} is {rev.status.lower().replace('_', ' ')} or you cannot edit it; put the tags in by hand", "tags": new_tags}
+        else:
+            from app.services import documents as docsvc
+
+            fo = ctx.db.get(FileObject, rev.file_id)
+            it_row = docsvc.add_iteration(ctx.db, ctx.user, doc, rev, fo.original_name, tagging.write_tags(data, new_tags), source="TAGGING", note=f"{len(new_tags)} requirement tag(s) added from {s.name}")
+            tags_written = {"written": True, "iteration": it_row.iteration, "count": len(new_tags)}
+    src_sha = rev.sha256
+    s.last_synced_at, s.file_sha256 = utcnow(), src_sha
+    if not s.document_id:
+        s.document_id = doc.id
+    ctx.audit("requirement.document_import", "requirement_source", s.id, f"{p.code}: {len(created)} new, {len(updated)} updated requirement(s) from {doc.number}",
+              {"created": created, "updated": updated, "skipped": skipped, "tags_written": tags_written})
+    ctx.db.commit()
+    return {"created": created, "updated": updated, "unchanged": unchanged, "skipped": skipped, "tags_written": tags_written}
 
 
 # ------------------------------------------------------------------ list / read
@@ -259,7 +418,7 @@ def _detail(ctx: Ctx, r: Requirement) -> dict:
         "links_out": [{"id": str(x.id), "type": x.link_type, "req": {"id": str(o.id), "key": o.key, "title": o.title, "status": o.status}} for x, o in out_links if visible(o)],
         "links_in": [{"id": str(x.id), "type": x.link_type, "req": {"id": str(o.id), "key": o.key, "title": o.title, "status": o.status}} for x, o in in_links if visible(o)],
         "tasks": [{"link_id": str(x.id), "type": x.link_type, "id": str(t.id), "key": t.key, "title": t.title, "status": t.status, "progress": t.progress} for x, t in tasks if can_view_task(db, ctx.p, t)],
-        "documents": [{"link_id": str(x.id), "type": x.link_type, "id": str(d.id), "number": d.number, "title": d.title, "status": d.status} for x, d in docs if can_view_document(db, ctx.p, d)],
+        "documents": [{"link_id": str(x.id), "type": x.link_type, "section": x.section, "paragraph": x.paragraph, "id": str(d.id), "number": d.number, "title": d.title, "status": d.status} for x, d in docs if can_view_document(db, ctx.p, d)],
         "reviews": [{"id": str(x.id), "cycle": x.cycle, "revision": x.revision, "role": x.role, "status": x.status, "comment": x.comment, "decided_at": iso(x.decided_at), "reviewer": who(x.reviewer_id), "content_sha256": x.content_sha256} for x in reviews],
         "revisions": [{"revision": x.revision, "title": x.title, "description": x.description, "acceptance_criteria": x.acceptance_criteria, "content_sha256": x.content_sha256, "change_reason": x.change_reason, "created_at": iso(x.created_at), "created_by": who(x.created_by_id)} for x in revisions],
         "history": [{"id": str(e.id), "kind": e.kind, "from": e.from_value, "to": e.to_value, "comment": e.comment, "at": iso(e.at), "actor": who(e.actor_id)} for e in events],
@@ -326,10 +485,10 @@ def create_requirement(pid: uuid.UUID, body: RequirementIn, ctx: Ctx = Depends(g
         raise Forbidden("You do not have requirement edit permission in this scope.", details={"permission": "req.edit"})
     _validate_links(ctx, pid, body)
     src = ctx.db.get(RequirementSource, body.source_id) if body.source_id else None
-    prefix = src.key_prefix if src else f"{p.code}-REQ"
     values = body.model_dump(exclude={"change_reason"})
     values["owner_id"] = body.owner_id or ctx.user.id
-    r = Requirement(project_id=pid, key=svc.next_key(ctx.db, prefix), status="DRAFT", content_sha256=svc.content_hash(body.title, body.description, body.acceptance_criteria, body.req_type, body.priority), **values)
+    key = tagging.next_tag(ctx.db, src, body.item_id) if src else svc.next_key(ctx.db, f"{p.code}-REQ")
+    r = Requirement(project_id=pid, key=key, status="DRAFT", content_sha256=svc.content_hash(body.title, body.description, body.acceptance_criteria, body.req_type, body.priority), **values)
     ctx.db.add(r)
     ctx.db.flush()
     svc.write_revision(ctx.db, r, ctx.user.id, "Created")
@@ -662,10 +821,9 @@ def import_csv(pid: uuid.UUID, file: UploadFile = File(...), source_id: uuid.UUI
     summary = {"new": [{"external_id": x["external_id"], "title": x["title"]} for x in new], "changed": [{"external_id": x["external_id"], "key": x["key"], "title": x["values"]["title"]} for x in changed], "unchanged": len(unchanged), "conflicts": conflicts, "removed": removed, "errors": errors}
     if dry_run or errors:
         return {**summary, "dry_run": True, "committed": False}
-    prefix = src.key_prefix
     for x in new:
         ext = x.pop("external_id")
-        r = Requirement(project_id=pid, source_id=src.id, key=svc.next_key(ctx.db, prefix), external_id=ext, external_version=external_version, owner_id=ctx.user.id, status="DRAFT", content_sha256=svc.content_hash(x["title"], x["description"], x["acceptance_criteria"], x["req_type"], x["priority"]), **x)
+        r = Requirement(project_id=pid, source_id=src.id, key=tagging.next_tag(ctx.db, src, x.get("item_id")), external_id=ext, external_version=external_version, owner_id=ctx.user.id, status="DRAFT", content_sha256=svc.content_hash(x["title"], x["description"], x["acceptance_criteria"], x["req_type"], x["priority"]), **x)
         ctx.db.add(r)
         ctx.db.flush()
         svc.write_revision(ctx.db, r, ctx.user.id, f"Imported from {src.name}")

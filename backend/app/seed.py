@@ -31,6 +31,7 @@ from app.models import (
     UserOrgAssignment,
     WorkflowBinding,
     WorkflowDefinition,
+    WorkflowInstance,
     WorkflowTask,
     WorkflowVersion,
     Milestone,
@@ -288,6 +289,15 @@ def _seed_demo_deployments(db, alpha, pe, td, cm) -> None:
     db.add(ArtifactReview(artifact_type="DEPLOYMENT", artifact_id=d3.id, revision=1, content_sha256=d3.content_sha256, cycle=1, reviewer_id=cm.id, role="APPROVER", submitted_by_id=pe.id))
     db.add(NumberSequence(key="dep:ALPHA", next_value=4))
     db.flush()
+
+
+# Example of a preparer's review checklist on demo documents (each document's author writes their own).
+DEMO_CHECKLIST = [
+    {"text": "Scope, applicability and the configuration item are stated", "guidance": "Section 1", "stages": []},
+    {"text": "Every requirement is uniquely tagged and testable", "guidance": "Tags follow the source's tag format", "stages": []},
+    {"text": "Interfaces and referenced documents are listed with their revisions", "guidance": "Sections 2 and 6", "stages": []},
+    {"text": "Open issues and TBDs are recorded with owners", "guidance": "Annex A", "stages": []},
+]
 
 
 def _seed_phases(db) -> None:
@@ -556,7 +566,7 @@ def seed() -> None:
         # ---- document types
         dts = {}
         for code, name, cat, pattern, tmpl, sig, levels, color, ext in DOC_TYPES:
-            dts[code] = DocumentType(code=code, name=name, category=cat, numbering_pattern=pattern, default_template=tmpl, requires_signature=sig, applicable_levels=levels, color=color, allowed_extensions=ext)
+            dts[code] = DocumentType(code=code, name=name, category=cat, numbering_pattern=pattern, default_template=tmpl, requires_signature=sig, require_review_checklist=cat == "ENGINEERING", applicable_levels=levels, color=color, allowed_extensions=ext)
             db.add(dts[code])
         db.flush()
 
@@ -573,9 +583,25 @@ def seed() -> None:
         db.flush()
 
         # ---- demo documents driven through the real workflow engine
+        from app.models import DocumentRevision as _Rev
+        from app.services import doc_checklist as dchk
+
         def new(u, t, title, item=None, project=alpha, org=None, cls="RESTRICTED"):
-            return docsvc.create_document(db, u, type_id=dts[t].id, title=title, project_id=project.id if project else None, item_id=item.id if item else None, owner_org_unit_id=org.id if org else None,
-                                          domain_id=None, classification=cls, description=None, keywords=None, content=None, from_template=True)
+            d = docsvc.create_document(db, u, type_id=dts[t].id, title=title, project_id=project.id if project else None, item_id=item.id if item else None, owner_org_unit_id=org.id if org else None,
+                                       domain_id=None, classification=cls, description=None, keywords=None, content=None, from_template=True)
+            if dts[t].require_review_checklist:  # the preparer's review checklist (reviewers and approvers answer it)
+                db.flush()
+                dchk.replace_items(db, db.get(_Rev, d.current_revision_id), DEMO_CHECKLIST, u.id, set())
+            return d
+
+        def decide(u, decision, comment, fixed=None):
+            t = pending(u)
+            inst = db.get(WorkflowInstance, t.instance_id)
+            todo = dchk.applicable(dchk.active(dchk.items(db, inst.revision_id)), t.stage_key)
+            answers = {str(i.id): {"result": "OK"} for i in todo}
+            if decision != "approve" and todo:
+                answers[str(todo[0].id)] = {"result": "NOT_OK", "remark": comment}
+            return wf.decide(db, u, t.id, decision, comment, fixed, answers)
 
         def pending(user):
             return db.execute(select(WorkflowTask).where(WorkflowTask.assignee_id == user.id, WorkflowTask.status == "PENDING").order_by(WorkflowTask.created_at.desc())).scalars().first()
@@ -590,9 +616,9 @@ def seed() -> None:
         d1 = new(pe, "SPEC", "Central Processing Unit — Equipment Specification", cpu)
         db.flush()
         wf.start(db, pe, d1, cur(d1), {"check": [str(das.id)], "review": [str(joshi.id)], "approve": [str(td.id)]}, "Initial issue for release")
-        wf.decide(db, das, pending(das).id, "approve", "Checked. Minor editorial remarks addressed.", ok)
-        wf.decide(db, joshi, pending(joshi).id, "approve", "Reviewed — concur.")
-        wf.decide(db, td, pending(td).id, "approve", "Approved for release.")
+        decide(das, "approve", "Checked. Minor editorial remarks addressed.", ok)
+        decide(joshi, "approve", "Reviewed — concur.")
+        decide(td, "approve", "Approved for release.")
         for u in (pe, das, joshi, td):
             wf.sign(db, u, pending(u).id, s.demo_password)
         relsvc.release_revision(db, cm, d1, cur(d1), "Initial release")
@@ -604,14 +630,14 @@ def seed() -> None:
         d3 = new(priya, "SRS", "CPU Embedded Software — Software Requirements", cpu)
         db.flush()
         wf.start(db, priya, d3, cur(d3), {"check": [str(fatima.id)], "review": [str(rakesh.id)], "approve": [str(td.id)]})
-        wf.decide(db, fatima, pending(fatima).id, "request_changes", "Section 3.2 timing requirements lack tolerance values; please add derived requirement IDs.")
+        decide(fatima, "request_changes", "Section 3.2 timing requirements lack tolerance values; please add derived requirement IDs.")
         # 4) MPU spec — approved, awaiting release
         d4 = new(sanjay, "SPEC", "Main Processor Unit — Equipment Specification", mpu)
         db.flush()
         wf.start(db, sanjay, d4, cur(d4), {"check": [str(fatima.id)], "review": [str(joshi.id)], "approve": [str(dir_elx.id)]})
-        wf.decide(db, fatima, pending(fatima).id, "approve", "OK", ok)
-        wf.decide(db, joshi, pending(joshi).id, "approve", "OK")
-        wf.decide(db, dir_elx, pending(dir_elx).id, "approve", "Approved")
+        decide(fatima, "approve", "OK", ok)
+        decide(joshi, "approve", "OK")
+        decide(dir_elx, "approve", "Approved")
         for u in (sanjay, fatima, joshi, dir_elx):
             wf.sign(db, u, pending(u).id, s.demo_password)
         # 5) Draft docs
@@ -621,7 +647,7 @@ def seed() -> None:
         d6 = new(sanjay, "ICD", "Display Panel Unit — Video Interface ICD", dpu)
         db.flush()
         wf.start(db, sanjay, d6, cur(d6), {"check": [str(fatima.id)], "review": [str(joshi.id)], "approve": [str(dir_elx.id)]})
-        wf.decide(db, fatima, pending(fatima).id, "approve", "Checked", ok)
+        decide(fatima, "approve", "Checked", ok)
         # 6) Programme-level document (Head Directorate) in parallel concurrence
         d7 = new(pe, "PMP", "Product Alpha Programme Management Plan — Phase 2", prd, org=hd)
         db.flush()
@@ -630,7 +656,7 @@ def seed() -> None:
         d8 = new(suresh, "ADMN", "Office Order — Constitution of Product Alpha Design Review Board", None, project=None, org=adm, cls="UNCLASSIFIED")
         db.flush()
         wf.start(db, suresh, d8, cur(d8), {"approve": [str(lakshmi.id)]})
-        wf.decide(db, lakshmi, pending(lakshmi).id, "approve", "Approved.")
+        decide(lakshmi, "approve", "Approved.")
         d9 = new(suresh, "PRQ", "Procurement Request — Environmental Test Chamber", None, project=alpha, org=adm_proc, cls="UNCLASSIFIED")
         db.flush()
         wf.start(db, suresh, d9, cur(d9), {"approve": [str(lakshmi.id)]})
@@ -694,7 +720,7 @@ def seed_minimal() -> None:
                 db.add(RoleAssignment(user_id=admin.id, role_id=r.id, scope_type="GLOBAL"))
         dts = {}
         for code, name, cat, pattern, tmpl, sig, levels, color, ext in DOC_TYPES:
-            dts[code] = DocumentType(code=code, name=name, category=cat, numbering_pattern=pattern, default_template=tmpl, requires_signature=sig, applicable_levels=levels, color=color, allowed_extensions=ext)
+            dts[code] = DocumentType(code=code, name=name, category=cat, numbering_pattern=pattern, default_template=tmpl, requires_signature=sig, require_review_checklist=cat == "ENGINEERING", applicable_levels=levels, color=color, allowed_extensions=ext)
             db.add(dts[code])
         db.flush()
         w_eng = _wf(db, "ENG-4STEP", "Engineering Document Review", "Prepared → Checked → Reviewed → Approved → Digitally signed.", ENG_4STEP, admin)

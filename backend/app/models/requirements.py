@@ -24,6 +24,8 @@ class RequirementSource(IdMixin, TimestampMixin, Base):
     external_ref: Mapped[str | None] = mapped_column(String(300))
     external_version: Mapped[str | None] = mapped_column(String(80))
     key_prefix: Mapped[str] = mapped_column(String(40))  # requirement IDs are <prefix>-0001
+    # Tag format for requirement IDs from this source, e.g. {PREFIX}-{SEQ:4} or {PROJECT}-{ITEM}-SRS-{SEQ:3} (services/req_tagging.py)
+    tag_format: Mapped[str] = mapped_column(String(120), default="{PREFIX}-{SEQ:4}")
     document_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_documents.id"))
     org_unit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_org_units.id"))
     file_sha256: Mapped[str | None] = mapped_column(String(64))
@@ -116,6 +118,8 @@ class RequirementDocument(IdMixin, Base):
     requirement_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_requirements.id"), index=True)
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("elm_documents.id"), index=True)
     link_type: Mapped[str] = mapped_column(String(30), default="specified_in")
+    section: Mapped[str | None] = mapped_column(String(300))  # heading of the document section the requirement sits in
+    paragraph: Mapped[int | None] = mapped_column(Integer)  # paragraph number in the document (tagging)
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("elm_users.id"))
     created_at: Mapped[datetime] = mapped_column(UTCDateTime, default=utcnow)
 

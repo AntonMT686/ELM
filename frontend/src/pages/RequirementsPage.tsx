@@ -8,6 +8,8 @@ import { api } from '../api/client'
 import { useAction, useProjects, useUsers } from '../api/hooks'
 import { EmptyBlock, Hash, Kpi, PageTitle, UserAvatar, When } from '../components/common'
 import { UserSelect } from './InboxPage'
+import TagFromDocument, { useItemOptions } from '../components/TagFromDocument'
+import { DeriveMenu, TraceButton } from './TracePage'
 
 const LINK_LABEL: Record<string, string> = { depends_on: 'Depends on', derived_from: 'Derived from', implements: 'Implements', related_to: 'Related to', conflicts_with: 'Conflicts with' }
 const REVERSE_LABEL: Record<string, string> = { depends_on: 'Needed by', derived_from: 'Source of', implements: 'Implemented by', related_to: 'Related to', conflicts_with: 'Conflicts with' }
@@ -109,6 +111,7 @@ function Project({ projectId }: { projectId: string }) {
 // ------------------------------------------------------------------ create / edit
 function EditModal({ opened, value, projectId, sources, onClose, onSaved }: { opened: boolean; value?: any; projectId: string; sources: any[]; onClose: () => void; onSaved: (r: any) => void }) {
   const [f, setF] = useState<any>({})
+  const itemOptions = useItemOptions(projectId)
   useEffect(() => { if (opened) setF(value ? { title: value.title, description: value.description || '', acceptance_criteria: value.acceptance_criteria || '', req_type: value.req_type, priority: value.priority, source_id: value.source?.id || null, parent_id: value.parent?.id || null, owner_id: value.owner?.id || null, org_unit_id: value.org_unit_id, item_id: value.item_id, change_reason: '' } : { title: '', description: '', acceptance_criteria: '', req_type: 'FUNCTIONAL', priority: 'MEDIUM', source_id: sources[0]?.id || null, owner_id: null }) }, [opened, value])
   const set = (k: string) => (v: any) => setF((x: any) => ({ ...x, [k]: v }))
   const released = value && ['APPROVED', 'BASELINED'].includes(value.status)
@@ -126,7 +129,8 @@ function EditModal({ opened, value, projectId, sources, onClose, onSaved }: { op
           <Select label="Type" searchable allowDeselect={false} value={f.req_type} onChange={set('req_type')} data={[...new Set([...TYPES, f.req_type].filter(Boolean))]} />
           <Select label="Priority" allowDeselect={false} value={f.priority} onChange={set('priority')} data={Object.keys(PRIORITY_COLOR)} />
         </Group>
-        <Select label="Source" clearable value={f.source_id || null} onChange={set('source_id')} data={sources.map((s) => ({ value: s.id, label: s.name }))} description={value ? undefined : 'The source sets the ID prefix.'} />
+        <Select label="Source" clearable value={f.source_id || null} onChange={set('source_id')} data={sources.map((s) => ({ value: s.id, label: `${s.name} (${s.tag_format})` }))} description={value ? undefined : 'The source sets the tag format of the ID.'} />
+        <Select label="Breakdown item (level)" searchable clearable value={f.item_id || null} onChange={set('item_id')} data={itemOptions} description="Where the requirement applies: product, system, subsystem, unit, module …" />
         <UserSelect label="Owner" value={f.owner_id || null} onChange={set('owner_id')} placeholder={value ? undefined : 'You, if left empty'} />
         {needReason && <Textarea label="Reason for the change" required autosize value={f.change_reason || ''} onChange={(e) => set('change_reason')(e.currentTarget.value)} />}
         <Group justify="flex-end"><Button variant="default" onClick={onClose}>Cancel</Button><Button disabled={(f.title || '').length < 3 || (needReason && !(f.change_reason || '').trim())} loading={save.isPending} onClick={() => save.mutate(undefined)}>Save</Button></Group>
@@ -148,7 +152,7 @@ function DetailDrawer({ id, projectId, sources, lifecycle, onClose, onOpen }: { 
       {r && (
         <Stack>
           <div>
-            <Group justify="space-between" wrap="nowrap" align="flex-start"><Text fw={650} size="lg" style={{ whiteSpace: 'pre-wrap' }}>{r.title}</Text>{r.can_edit && r.status !== 'UNDER_REVIEW' && <Button size="xs" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEdit(true)} style={{ flexShrink: 0 }}>Edit</Button>}</Group>
+            <Group justify="space-between" wrap="nowrap" align="flex-start"><Text fw={650} size="lg" style={{ whiteSpace: 'pre-wrap' }}>{r.title}</Text><Group gap={6} wrap="nowrap" style={{ flexShrink: 0 }}><TraceButton type="REQUIREMENT" id={r.id} /><DeriveMenu requirementId={r.id} />{r.can_edit && r.status !== 'UNDER_REVIEW' && <Button size="xs" variant="default" leftSection={<IconPencil size={14} />} onClick={() => setEdit(true)}>Edit</Button>}</Group></Group>
             <Group gap={6} mt={6}>
               <Badge size="xs" variant="light" color={PRIORITY_COLOR[r.priority]}>{r.priority}</Badge>
               <Badge size="xs" variant="light" color="gray">{r.req_type.replace(/_/g, ' ')}</Badge>
@@ -462,31 +466,37 @@ function BaselineDrawer({ id, others, onClose }: { id: string | null; others: an
 // ------------------------------------------------------------------ sources and import
 function Sources({ projectId, canEdit, sources }: { projectId: string; canEdit: boolean; sources: any[] }) {
   const [creating, setCreating] = useState(false)
-  const [f, setF] = useState<any>({ name: '', source_system: 'ELM', external_ref: '', key_prefix: '' })
+  const blank = { name: '', source_system: 'ELM', external_ref: '', key_prefix: '', tag_format: '{PREFIX}-{SEQ:4}', document_id: null }
+  const [f, setF] = useState<any>(blank)
   const [imp, setImp] = useState<any | null>(null)
-  const make = useAction(() => api.post(`/projects/${projectId}/requirement-sources`, f), { success: 'Source added', invalidate: [['req-sources', projectId]], onDone: () => { setCreating(false); setF({ name: '', source_system: 'ELM', external_ref: '', key_prefix: '' }) } })
+  const [tagSrc, setTagSrc] = useState<any | null>(null)
+  const docs = useQuery<any>({ queryKey: ['documents-mini', projectId], queryFn: () => api.get('/documents', { project_id: projectId, page_size: 200 }), enabled: creating })
+  const make = useAction(() => api.post(`/projects/${projectId}/requirement-sources`, f), { success: 'Source added', invalidate: [['req-sources', projectId]], onDone: () => { setCreating(false); setF(blank) } })
   return (
     <Stack>
-      <Text size="sm" c="dimmed">A source records where requirements came from: a BRD, an SRS or a tool export. It also sets the ID prefix of the requirements it holds.</Text>
+      <Text size="sm" c="dimmed">A source records where requirements came from: a BRD, an SRS, a specification at any level or a tool export. It sets the tag format of the requirement IDs it holds, and requirements can be tagged straight from its Word document.</Text>
       {canEdit && <Group><Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setCreating(true)}>New source</Button></Group>}
       {!sources.length && <EmptyBlock text="No sources yet." />}
       {!!sources.length && (
         <Card withBorder p={0} style={{ overflowX: 'auto' }}>
           <Table verticalSpacing={8} miw={760}>
-            <Table.Thead><Table.Tr><Table.Th>Source</Table.Th><Table.Th>System</Table.Th><Table.Th>ID prefix</Table.Th><Table.Th>Requirements</Table.Th><Table.Th>Last import</Table.Th><Table.Th /></Table.Tr></Table.Thead>
-            <Table.Tbody>{sources.map((s) => <Table.Tr key={s.id}><Table.Td><Text size="sm" fw={600}>{s.name}</Text>{s.document && <Anchor size="xs" component={Link} to={`/documents/${s.document.id}`}>{s.document.number}</Anchor>}</Table.Td><Table.Td><Badge size="xs" variant="light" color="gray">{s.source_system}</Badge></Table.Td><Table.Td><Code>{s.key_prefix}</Code></Table.Td><Table.Td>{s.requirements}</Table.Td><Table.Td><Text size="xs">{fmt(s.last_synced_at)}{s.external_version ? ` · ${s.external_version}` : ''}</Text></Table.Td><Table.Td ta="right">{canEdit && <Button size="xs" variant="subtle" leftSection={<IconUpload size={14} />} onClick={() => setImp(s)}>Import CSV</Button>}</Table.Td></Table.Tr>)}</Table.Tbody>
+            <Table.Thead><Table.Tr><Table.Th>Source</Table.Th><Table.Th>System</Table.Th><Table.Th>Tag format</Table.Th><Table.Th>Requirements</Table.Th><Table.Th>Last import</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+            <Table.Tbody>{sources.map((s) => <Table.Tr key={s.id}><Table.Td><Text size="sm" fw={600}>{s.name}</Text>{s.document && <Anchor size="xs" component={Link} to={`/documents/${s.document.id}`}>{s.document.number}</Anchor>}</Table.Td><Table.Td><Badge size="xs" variant="light" color="gray">{s.source_system}</Badge></Table.Td><Table.Td><Code>{s.tag_format}</Code><Text size="xs" c="dimmed">PREFIX = {s.key_prefix}</Text></Table.Td><Table.Td>{s.requirements}</Table.Td><Table.Td><Text size="xs">{fmt(s.last_synced_at)}{s.external_version ? ` · ${s.external_version}` : ''}</Text></Table.Td><Table.Td ta="right">{canEdit && <Group gap={4} justify="flex-end" wrap="nowrap"><Button size="xs" variant="light" onClick={() => setTagSrc(s)}>Tag from document</Button><Button size="xs" variant="subtle" leftSection={<IconUpload size={14} />} onClick={() => setImp(s)}>Import CSV</Button></Group>}</Table.Td></Table.Tr>)}</Table.Tbody>
           </Table>
         </Card>
       )}
       <Modal opened={creating} onClose={() => setCreating(false)} title="New requirement source">
         <Stack>
           <TextInput label="Name" required value={f.name} onChange={(e) => setF({ ...f, name: e.currentTarget.value })} />
-          <Group grow><TextInput label="System" description="For example ELM, DOORS" value={f.source_system} onChange={(e) => setF({ ...f, source_system: e.currentTarget.value })} /><TextInput label="ID prefix" required description="IDs become PREFIX-0001" value={f.key_prefix} onChange={(e) => setF({ ...f, key_prefix: e.currentTarget.value })} /></Group>
+          <Group grow><TextInput label="System" description="For example ELM, DOORS" value={f.source_system} onChange={(e) => setF({ ...f, source_system: e.currentTarget.value })} /><TextInput label="Prefix" required description="Used as {PREFIX} in the tag format" value={f.key_prefix} onChange={(e) => setF({ ...f, key_prefix: e.currentTarget.value })} /></Group>
+          <TextInput label="Tag format" description="Tokens: {PREFIX} {PROJECT} {ITEM} (breakdown item code) {LEVEL} (level code) {SEQ:n} (running number, n digits). E.g. {PREFIX}-{SEQ:4} or {PROJECT}-{ITEM}-SRS-{SEQ:3}" value={f.tag_format} onChange={(e) => setF({ ...f, tag_format: e.currentTarget.value })} />
+          <Select label="Source document (optional)" description="The Word document requirements are tagged in" searchable clearable value={f.document_id} onChange={(v) => setF({ ...f, document_id: v })} data={(docs.data?.items || []).map((d: any) => ({ value: d.id, label: `${d.number} — ${d.title}` }))} />
           <TextInput label="External reference" value={f.external_ref} onChange={(e) => setF({ ...f, external_ref: e.currentTarget.value })} />
-          <Group justify="flex-end"><Button variant="default" onClick={() => setCreating(false)}>Cancel</Button><Button disabled={f.name.length < 2 || f.key_prefix.length < 2} loading={make.isPending} onClick={() => make.mutate(undefined)}>Add source</Button></Group>
+          <Group justify="flex-end"><Button variant="default" onClick={() => setCreating(false)}>Cancel</Button><Button disabled={f.name.length < 2 || f.key_prefix.length < 2 || !f.tag_format.includes('{SEQ')} loading={make.isPending} onClick={() => make.mutate(undefined)}>Add source</Button></Group>
         </Stack>
       </Modal>
       <ImportModal source={imp} projectId={projectId} onClose={() => setImp(null)} />
+      <TagFromDocument source={tagSrc} projectId={projectId} onClose={() => setTagSrc(null)} />
     </Stack>
   )
 }

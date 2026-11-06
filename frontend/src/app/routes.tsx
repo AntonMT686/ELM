@@ -21,6 +21,8 @@ const SourceControl = lazy(() => import('../pages/SourceControlPage'))
 const Design = lazy(() => import('../pages/DesignPage'))
 const Testing = lazy(() => import('../pages/TestingPage'))
 const Deployments = lazy(() => import('../pages/DeploymentsPage'))
+const Trace = lazy(() => import('../pages/TracePage'))
+const Reports = lazy(() => import('../pages/ReportsPage'))
 const AdminTaskLifecycle = lazy(() => import('../pages/admin/TaskLifecyclePage'))
 const Workflows = lazy(() => import('../pages/WorkflowsPage'))
 const WorkflowDesigner = lazy(() => import('../pages/WorkflowDesignerPage'))
@@ -76,6 +78,8 @@ export default function AppRoutes() {
           <Route path="design/:projectId" element={<Design />} />
           <Route path="testing" element={<Testing />} />
           <Route path="testing/:projectId" element={<Testing />} />
+          <Route path="trace" element={<Trace />} />
+          <Route path="reports" element={<Reports />} />
           <Route path="deployments" element={<Deployments />} />
           <Route path="deployments/:projectId" element={<Deployments />} />
           <Route path="planning/:projectId" element={<Planning />} />

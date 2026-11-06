@@ -10,6 +10,7 @@ import { useAction, useMe, useOrgUnits, useUsers } from '../api/hooks'
 import { UserSelect } from '../pages/InboxPage'
 import { StatusTag, UserAvatar, When } from './common'
 import ScmPanel from './ScmPanel'
+import { TraceButton } from '../pages/TracePage'
 
 export const PRIORITY_COLOR: Record<string, string> = { LOW: 'gray', MEDIUM: 'blue', HIGH: 'orange', CRITICAL: 'red' }
 export const KIND_LABEL: Record<string, string> = { TASK: 'Task', ACTION: 'Action item', MILESTONE: 'Milestone', CHANGE_REQUEST: 'Change request', ISSUE: 'Issue', DEVELOPMENT: 'Development' }
@@ -106,7 +107,7 @@ function Existing({ id, onClose, invalidate }: { id: string; onClose: () => void
         <Group justify="space-between" mb={4}><Text size="xs" c="dimmed">Progress (calculated from status{t.children.length ? ' and sub-tasks' : ''})</Text><Text size="xs" fw={700}>{t.progress}%</Text></Group>
         <Progress value={t.progress} size="sm" color={t.progress >= 100 ? 'teal' : 'blue'} />
       </div>
-      <Transitions task={t} keys={refreshKeys} />
+      <Group justify="space-between"><Transitions task={t} keys={refreshKeys} /><TraceButton type="TASK" id={t.id} /></Group>
       <Tabs defaultValue={t.kind === 'DEVELOPMENT' ? 'code' : 'details'} keepMounted={false}>
         <Tabs.List>
           <Tabs.Tab value="details">Details</Tabs.Tab>

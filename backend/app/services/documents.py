@@ -143,6 +143,10 @@ def revise(db: Session, user: User, doc: Document, change_summary: str) -> Docum
     if cur and cur.file:
         data = storage.read_bytes(cur.file, verify=True)
         add_iteration(db, user, doc, rev, cur.file.original_name, data, source="COPY", note=f"Copied from rev {cur.label}", validate=False)
+    if cur:
+        from app.services import doc_checklist
+
+        doc_checklist.copy_forward(db, cur, rev, user.id)  # the author adapts it for the new revision
     doc.current_revision_id = rev.id
     doc.status = "DRAFT"
     doc.version += 1

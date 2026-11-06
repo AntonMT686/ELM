@@ -8,7 +8,7 @@ import uuid
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import admin, auth, dashboard, deployments, design, documents, engineering, misc, onlyoffice, planning, releases, requirements, scm, tasks, testing, workflow
+from app.api.v1 import admin, auth, dashboard, deployments, design, documents, engineering, misc, onlyoffice, planning, releases, requirements, scm, tasks, testing, trace, workflow
 from app.core.config import get_settings
 from app.core.errors import install_error_handlers
 
@@ -46,7 +46,7 @@ async def security_mw(request: Request, call_next):
     return response
 
 
-for r in (auth.router, admin.router, engineering.router, documents.router, workflow.router, releases.router, dashboard.router, misc.router, onlyoffice.router, tasks.router, planning.router, requirements.router, scm.router, design.router, testing.router, deployments.router):
+for r in (auth.router, admin.router, engineering.router, documents.router, workflow.router, releases.router, dashboard.router, misc.router, onlyoffice.router, tasks.router, planning.router, requirements.router, scm.router, design.router, testing.router, deployments.router, trace.router):
     app.include_router(r, prefix="/api/v1")
 
 

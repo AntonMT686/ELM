@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconArrowBackUp, IconCheck, IconCloudUpload, IconLoc
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { TraceButton } from './TracePage'
 import { api } from '../api/client'
 import { useAction, useProjects, useUsers } from '../api/hooks'
 import { HistoryPanel, ReasonModal, ReviewPanel } from '../components/ArtifactParts'
@@ -152,6 +153,7 @@ function Detail({ id, projectId, states, onOpen }: { id: string; projectId: stri
         {d.can_report && waiting && <Button size="xs" color="teal" variant="light" onClick={() => setReport({ attempt: waiting.id, outcome: 'SUCCEEDED', log: '', reason: '' })}>Record result</Button>}
         {d.can_rollback && <Button size="xs" color="orange" variant="light" leftSection={<IconArrowBackUp size={14} />} onClick={() => setAsk('rollback')}>Roll back</Button>}
         {['PLANNED', 'AWAITING_APPROVAL', 'APPROVED'].includes(d.status) && <Button size="xs" variant="subtle" color="gray" onClick={() => setAsk('cancel')}>Cancel</Button>}
+        <TraceButton type="DEPLOYMENT" id={id} />
       </Group>
       {d.gates && (
         <Card withBorder>

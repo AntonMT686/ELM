@@ -36,7 +36,7 @@ export default function DocTypesPage() {
 
 function TypeDrawer({ t, onClose }: { t: any | null; onClose: () => void }) {
   const [f, setF] = useState<any>({})
-  useEffect(() => { if (t) setF({ code: '', name: '', category: 'ENGINEERING', numbering_pattern: '{PROJECT}-{ITEM}-{TYPE}-{SEQ:3}', revision_scheme: 'ALPHA', allowed_extensions: 'docx,pdf', default_template: 'docx', requires_signature: true, applicable_levels: '', color: '#2563eb', active: true, description: '', ...t }) }, [t])
+  useEffect(() => { if (t) setF({ code: '', name: '', category: 'ENGINEERING', numbering_pattern: '{PROJECT}-{ITEM}-{TYPE}-{SEQ:3}', revision_scheme: 'ALPHA', allowed_extensions: 'docx,pdf', default_template: 'docx', requires_signature: true, require_review_checklist: false, applicable_levels: '', color: '#2563eb', active: true, description: '', ...t }) }, [t])
   const save = useAction(() => api.post('/document-types', { ...f, applicable_levels: f.applicable_levels || null, default_template: f.default_template || null }), { success: 'Document type saved', invalidate: [['doc-types']], onDone: onClose })
   const set = (k: string) => (v: any) => setF({ ...f, [k]: v })
   return (
@@ -54,6 +54,7 @@ function TypeDrawer({ t, onClose }: { t: any | null; onClose: () => void }) {
         <TagsInput label="Applicable breakdown levels" description="Empty = any level (e.g. SYSTEM, UNIT)" value={(f.applicable_levels || '').split(',').filter(Boolean)} onChange={(v) => set('applicable_levels')(v.map((x) => x.toUpperCase()).join(','))} />
         <Textarea label="Description" value={f.description || ''} onChange={(e) => set('description')(e.currentTarget.value)} />
         <Switch label="Digital signature required before release" checked={f.requires_signature} onChange={(e) => set('requires_signature')(e.currentTarget.checked)} />
+        <Switch label="Preparer must write a review checklist before submitting" description="Reviewers and approvers then answer every item OK / Not OK / N/A" checked={!!f.require_review_checklist} onChange={(e) => set('require_review_checklist')(e.currentTarget.checked)} />
         <Switch label="Active" checked={f.active} onChange={(e) => set('active')(e.currentTarget.checked)} />
         <Button loading={save.isPending} disabled={f.code?.length < 2 || !f.name} onClick={() => save.mutate(undefined)}>Save</Button>
       </Stack>

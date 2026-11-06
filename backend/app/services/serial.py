@@ -35,7 +35,7 @@ def doc_type_dict(t: DocumentType) -> dict:
     return {
         "id": str(t.id), "code": t.code, "name": t.name, "category": t.category, "description": t.description,
         "numbering_pattern": t.numbering_pattern, "revision_scheme": t.revision_scheme, "allowed_extensions": t.allowed_extensions,
-        "default_template": t.default_template, "requires_signature": t.requires_signature, "applicable_levels": t.applicable_levels,
+        "default_template": t.default_template, "requires_signature": t.requires_signature, "require_review_checklist": t.require_review_checklist, "applicable_levels": t.applicable_levels,
         "icon": t.icon, "color": t.color, "active": t.active,
     }
 

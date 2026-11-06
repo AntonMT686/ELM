@@ -1,6 +1,8 @@
 from app.models.document import (  # noqa: F401
     Document,
     DocumentAccessGrant,
+    DocumentChecklistItem,
+    DocumentChecklistResult,
     DocumentAccessLog,
     DocumentComment,
     DocumentRelation,

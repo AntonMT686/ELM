@@ -203,6 +203,12 @@ def start(db: Session, actor: User, doc: Document, rev: DocumentRevision, picks:
     v = resolve_version(db, doc)
     spec = spec_of(v)
     facts = _facts(db, doc)
+    dt = db.get(DocumentType, doc.type_id)
+    if dt and dt.require_review_checklist and any(s.type in ("review", "approval") for s in spec.stages):
+        from app.services import doc_checklist
+
+        if not doc_checklist.active(doc_checklist.items(db, rev.id)):
+            raise AppError("Prepare the review checklist for this revision first, so reviewers and approvers can check against it.", code="CHECKLIST_REQUIRED")
 
     planned: dict[str, list[str]] = {}
     for s in spec.stages[1:]:
@@ -354,7 +360,7 @@ def _guard(db: Session, user: User, task: WorkflowTask, inst: WorkflowInstance, 
     return stage
 
 
-def decide(db: Session, user: User, task_id: uuid.UUID, decision: str, comment: str | None, checklist: dict[str, bool] | None = None) -> WorkflowInstance:
+def decide(db: Session, user: User, task_id: uuid.UUID, decision: str, comment: str | None, checklist: dict[str, bool] | None = None, item_results: dict | None = None) -> WorkflowInstance:
     task, inst, doc, rev, spec = _load(db, task_id)
     stage = _guard(db, user, task, inst, rev, spec)
     if stage.type == "signature":
@@ -369,6 +375,11 @@ def decide(db: Session, user: User, task_id: uuid.UUID, decision: str, comment: 
         missing = [c for c in stage.checklist if not (checklist or {}).get(c)]
         if missing:
             raise AppError("Complete all checklist items before approving.", code="CHECKLIST", details={"missing": missing})
+    from app.services import doc_checklist
+
+    failed = doc_checklist.validate_and_record(db, rev_id=rev.id, stage_key=stage.key, stage_type=stage.type, task_id=task.id, user_id=user.id, decision=decision, answers=item_results)
+    if failed and decision != "approve":
+        comment = f"{comment}\n\nChecklist items not OK: " + "; ".join(failed)
     now = utcnow()
     task.status = {"approve": "APPROVED", "request_changes": "CHANGES_REQUESTED", "reject": "REJECTED"}[decision]
     task.decision_comment = comment
