@@ -13,3 +13,7 @@ pms_bundle*.json*
 backend/.venv/
 logs/
 offline-packages/
+
+# Build cache and local backups
+*.tsbuildinfo
+backups/
